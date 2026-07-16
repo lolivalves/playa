@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0d2b4e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Playa+" />
+  <meta name="description" content="Beach delivery – drinks, ice cream & snacks delivered to your spot." />
+  <title>Playa+ | We Bring It To You</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:   #0d2b4e;
+      --teal:   #2ab5a5;
+      --teal2:  #3ecfbf;
+      --orange: #f47c3c;
+      --sun:    #f5a623;
+      --sand:   #f5ede0;
+      --cream:  #faf6f1;
+      --white:  #ffffff;
+      --border: rgba(0,0,0,0.09);
+      --muted:  #718096;
+      --green:  #22c55e;
+    }
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #e8e8e8;
+      color: var(--navy);
+      -webkit-font-smoothing: antialiased;
+    }
+    #app {
+      max-width: 430px;
+      min-height: 100dvh;
+      margin: 0 auto;
+      background: var(--cream);
+      position: relative;
+      overflow-x: hidden;
+      box-shadow: 0 0 40px rgba(0,0,0,0.15);
+    }
+    button { font-family: inherit; }
+    input, textarea { font-family: inherit; outline: none; }
+    input:focus, textarea:focus { border-color: var(--teal) !important; }
+    ::-webkit-scrollbar { width: 0; }
+    .screen { min-height: 100dvh; display: flex; flex-direction: column; }
+    .content { flex: 1; overflow-y: auto; padding-bottom: 80px; }
+    .sticky-nav {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 430px;
+      background: var(--white);
+      border-top: 0.5px solid var(--border);
+      display: flex;
+      z-index: 100;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .nav-btn {
+      flex: 1; padding: 8px 4px 6px; border: none; background: transparent;
+      cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px;
+      transition: background 0.15s;
+    }
+    .nav-btn.active { background: #f0faf9; }
+    .nav-btn span.icon { font-size: 20px; }
+    .nav-btn span.label { font-size: 10px; font-weight: 400; color: var(--muted); }
+    .nav-btn.active span.label { color: var(--teal); font-weight: 600; }
+    .header {
+      background: var(--navy);
+      padding: 14px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .card {
+      background: var(--white);
+      border: 0.5px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .section-label {
+      font-size: 11px; font-weight: 600; color: var(--teal);
+      letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 10px;
+    }
+    .btn-primary {
+      width: 100%; padding: 15px;
+      background: var(--orange); color: var(--white);
+      border: none; border-radius: 12px;
+      font-size: 16px; font-weight: 600; cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-primary:active { opacity: 0.85; }
+    .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+    .badge {
+      font-size: 11px; font-weight: 600; padding: 3px 10px;
+      border-radius: 20px;
+    }
+    .badge-preparing { background: #fff8e6; color: #b45309; }
+    .badge-delivered { background: #e6f7f5; color: #0d6e63; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 36px; height: 36px; border: 3px solid rgba(42,181,165,0.2);
+      border-top-color: var(--teal); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+    .fade-in { animation: fadeIn 0.25s ease both; }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=0&single=true&output=csv';
+const ORDERS_KEY = 'playa_orders_v1';
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const CAT_EMOJI   = { Drinks:'💧', Snacks:'🥨', Food:'🥗', 'Ice Cream':'🍦' };
+const CAT_ORDER   = ['Drinks','Food','Snacks','Ice Cream'];
+const PROD_EMOJI  = {
+  DRK001:'🥤',DRK002:'🥤',DRK003:'🥤',DRK004:'🟢',DRK005:'🟢',
+  DRK006:'💧',DRK007:'✨',DRK008:'⚡',DRK009:'🍊',DRK010:'🍋',
+  SNK001:'🥔',SNK002:'🌽',SNK003:'💪',SNK004:'🌾',SNK005:'🧀',
+  FD001:'🥗',FD002:'🐟',FD003:'🍤',
+  ICE001:'🍓',ICE002:'🍉',ICE003:'💚',ICE004:'🥥',ICE005:'🍍',ICE006:'🍊'
+};
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let PRODUCTS = [];
+let S = {
+  view: 'loading',
+  cart: {},
+  orders: JSON.parse(localStorage.getItem(ORDERS_KEY) || '[]'),
+  catFilter: 'All',
+  pinPlaced: false, pinX: 55, pinY: 65,
+  spotNote: '',
+  orderPlaced: null,
+  adminView: 'dashboard',
+  supportSent: false,
+  supportMsg: ''
+};
+function save() { localStorage.setItem(ORDERS_KEY, JSON.stringify(S.orders)); }
+function cartCount() { return Object.values(S.cart).reduce((a,b)=>a+b,0); }
+function cartTotal() {
+  return Object.entries(S.cart).reduce((sum,[sku,qty]) => {
+    const p = PRODUCTS.find(x=>x.sku===sku);
+    return sum + (p ? p.price*qty : 0);
+  }, 0);
+}
+
+// ─── CSV PARSER ──────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));
+  return lines.slice(1).map(line => {
+    const cols=[]; let cur='', inQ=false;
+    for (let c of line) {
+      if (c==='"') { inQ=!inQ; }
+      else if (c===',' && !inQ) { cols.push(cur); cur=''; }
+      else cur+=c;
+    }
+    cols.push(cur);
+    const obj={};
+    headers.forEach((h,i)=>{ obj[h]=(cols[i]||'').trim().replace(/^"|"$/g,''); });
+    return obj;
+  });
+}
+
+async function loadProducts() {
+  try {
+    const r = await fetch(SHEET_CSV);
+    const text = await r.text();
+    const rows = parseCSV(text);
+    PRODUCTS = rows
+      .filter(r => r['Active']==='Yes')
+      .map(r => ({
+        sku:   r['SKU'],
+        name:  r['Product Name'],
+        desc:  r['Description'],
+        cat:   r['Category'],
+        img:   r['Product Image URL'] || '',
+        price: parseFloat(r['Selling Price ($)']) || 0,
+        emoji: PROD_EMOJI[r['SKU']] || CAT_EMOJI[r['Category']] || '🏖️'
+      }));
+    S.view = 'home';
+  } catch(e) {
+    S.view = 'error';
+  }
+  render();
+}
+
+// ─── SVG ASSETS ──────────────────────────────────────────────────────────────
+function towerSVG(s=60) {
+  return `<svg width="${s}" height="${s}" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="42" cy="46" r="34" fill="#f5a623"/>
+    <path d="M10 80 Q30 68 50 72 Q70 76 100 68 Q115 82 120 90 L0 90Z" fill="#2ab5a5" opacity="0.7"/>
+    <path d="M0 84 Q25 74 55 78 Q80 82 120 74 L120 95 L0 95Z" fill="#3ecfbf" opacity="0.5"/>
+    <rect x="46" y="32" width="32" height="24" rx="2" fill="#0d2b4e"/>
+    <rect x="50" y="36" width="8" height="8" rx="1" fill="#fff" opacity="0.9"/>
+    <rect x="62" y="36" width="8" height="8" rx="1" fill="#fff" opacity="0.9"/>
+    <rect x="44" y="54" width="36" height="3" rx="1" fill="#0d2b4e"/>
+    <rect x="42" y="56" width="4" height="22" rx="1" fill="#0d2b4e"/>
+    <rect x="74" y="56" width="4" height="22" rx="1" fill="#0d2b4e"/>
+    <line x1="46" y1="58" x2="60" y2="78" stroke="#0d2b4e" stroke-width="2"/>
+    <line x1="74" y1="58" x2="60" y2="78" stroke="#0d2b4e" stroke-width="2"/>
+    <line x1="46" y1="68" x2="74" y2="68" stroke="#0d2b4e" stroke-width="1.5"/>
+    <rect x="57" y="20" width="2" height="12" rx="1" fill="#0d2b4e"/>
+    <path d="M59 21 L67 24 L59 28Z" fill="#0d2b4e"/>
+    <ellipse cx="25" cy="86" rx="18" ry="5" fill="#e8d5b7" opacity="0.6"/>
+    <ellipse cx="90" cy="82" rx="14" ry="4" fill="#e8d5b7" opacity="0.5"/>
+  </svg>`;
+}
+
+// ─── SHARED COMPONENTS ───────────────────────────────────────────────────────
+function brandHeader(showCart=false) {
+  return `<div class="header">
+    <div style="display:flex;align-items:center;gap:10px">
+      ${towerSVG(38)}
+      <div>
+        <span style="color:#fff;font-size:19px;font-weight:700;letter-spacing:-0.5px">playa</span>
+        <span style="color:#f47c3c;font-size:19px;font-weight:700">+</span>
+        <div style="color:#3ecfbf;font-size:9px;letter-spacing:2.5px;text-transform:uppercase;margin-top:-2px">we bring it to you</div>
+      </div>
+    </div>
+    ${showCart ? `<button onclick="nav('cart')" style="background:rgba(255,255,255,0.15);border:none;border-radius:20px;padding:7px 14px;color:#fff;cursor:pointer;font-size:13px;font-family:inherit">
+      ${cartCount()>0 ? `🛒 ${cartCount()} · $${cartTotal().toFixed(2)}` : '🛒 Cart'}
+    </button>` : ''}
+  </div>`;
+}
+
+function backHeader(title, backTo) {
+  return `<div class="header">
+    <div style="display:flex;align-items:center;gap:8px">
+      <button onclick="nav('${backTo}')" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 6px 0 0;line-height:1">←</button>
+      <span style="color:#fff;font-size:16px;font-weight:500">${title}</span>
+    </div>
+  </div>`;
+}
+
+function bottomNav(active) {
+  const tabs = [
+    {id:'home', icon:'🏠', label:'Home'},
+    {id:'menu', icon:'🍽️', label:'Menu'},
+    {id:'track', icon:'🚀', label:'Track'},
+    {id:'profile', icon:'👤', label:'Profile'}
+  ];
+  return `<nav class="sticky-nav">
+    ${tabs.map(t=>`
+      <button class="nav-btn ${active===t.id?'active':''}" onclick="nav('${t.id}')">
+        <span class="icon">${t.icon}</span>
+        <span class="label">${t.label}</span>
+      </button>
+    `).join('')}
+  </nav>`;
+}
+
+// ─── SCREENS ─────────────────────────────────────────────────────────────────
+function screenLoading() {
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;gap:20px">
+    ${towerSVG(90)}
+    <div style="font-size:22px;font-weight:700;color:#0d2b4e">playa<span style="color:#f47c3c">+</span></div>
+    <div class="spinner"></div>
+    <div style="color:#718096;font-size:13px">Loading your beach menu…</div>
+  </div>`;
+}
+
+function screenError() {
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;gap:14px;padding:24px;text-align:center">
+    <div style="font-size:48px">😕</div>
+    <div style="font-weight:700;font-size:18px">Couldn't load the menu</div>
+    <div style="color:#718096;font-size:14px">Check your connection and try again.</div>
+    <button class="btn-primary" style="max-width:200px" onclick="location.reload()">Retry</button>
+  </div>`;
+}
+
+function screenHome() {
+  return `${brandHeader()}
+  <div class="content fade-in">
+    <div style="background:#0d2b4e;padding:8px 0 32px">
+      <div style="display:flex;justify-content:center;padding:16px 0 8px">${towerSVG(120)}</div>
+      <div style="text-align:center;padding:0 24px">
+        <div style="color:#fff;font-size:23px;font-weight:700;line-height:1.25">Stay on the sand.</div>
+        <div style="color:rgba(255,255,255,0.72);font-size:14px;margin-top:8px;line-height:1.5">
+          Drinks, ice cream, food & snacks<br>delivered right to your spot.
+        </div>
+      </div>
+    </div>
+    <div style="padding:16px;margin-top:-18px">
+      <div class="card" style="border-radius:16px">
+        <div class="section-label">How it works</div>
+        ${[['🛒','Browse our menu'],['📍','Pin your spot at checkout'],['💳','Pay in seconds'],['🏃','We run it to you']].map((s,i,a)=>`
+          <div style="display:flex;align-items:center;gap:12px;padding:10px 0;${i<a.length-1?'border-bottom:0.5px solid var(--border)':''}">
+            <span style="font-size:20px;width:30px;text-align:center">${s[0]}</span>
+            <span style="font-size:14px;color:var(--navy)">${s[1]}</span>
+          </div>`).join('')}
+      </div>
+      <button class="btn-primary" onclick="nav('menu')">Order now →</button>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px">
+        ${[['⏱️','~8 min delivery'],['🆓','Free delivery'],['🏖️','Beach-side only']].map(([e,l])=>`
+          <div class="card" style="text-align:center;padding:12px 8px;margin-bottom:0">
+            <div style="font-size:22px">${e}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:4px">${l}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+  </div>
+  ${bottomNav('home')}`;
+}
+
+function screenMenu() {
+  const cats = ['All', ...CAT_ORDER.filter(c => PRODUCTS.some(p=>p.cat===c))];
+  const filtered = S.catFilter==='All' ? PRODUCTS : PRODUCTS.filter(p=>p.cat===S.catFilter);
+  return `${brandHeader(true)}
+  <div class="content fade-in">
+    <div style="padding:12px 14px 0;background:var(--cream);position:sticky;top:56px;z-index:40;padding-bottom:8px;border-bottom:0.5px solid var(--border)">
+      <div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none">
+        ${cats.map(c=>`<button onclick="setFilter('${c}')"
+          style="white-space:nowrap;padding:6px 15px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all 0.15s;
+          border:1.5px solid ${S.catFilter===c?'#0d2b4e':'rgba(0,0,0,0.1)'};
+          background:${S.catFilter===c?'#0d2b4e':'#fff'};
+          color:${S.catFilter===c?'#fff':'#0d2b4e'}">
+          ${CAT_EMOJI[c]||'🏖️'} ${c}
+        </button>`).join('')}
+      </div>
+    </div>
+    <div style="padding:10px 14px">
+      ${filtered.map(p=>`
+        <div class="card" style="margin-bottom:9px;display:flex;align-items:center;gap:12px;padding:12px">
+          <div style="width:54px;height:54px;border-radius:10px;background:var(--sand);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;overflow:hidden">
+            ${p.img
+              ? `<img src="${p.img}" style="width:54px;height:54px;object-fit:cover;border-radius:10px" onerror="this.parentNode.innerHTML='${p.emoji}'">`
+              : p.emoji}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13px;color:var(--navy);line-height:1.3">${p.name}</div>
+            <div style="font-size:11px;color:var(--muted);margin:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px">${p.desc}</div>
+            <div style="font-weight:700;color:var(--teal);font-size:15px">$${p.price.toFixed(2)}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;flex-shrink:0">
+            ${(S.cart[p.sku]||0)>0 ? `
+              <button onclick="removeItem('${p.sku}')"
+                style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:16px;color:var(--navy);font-family:inherit">−</button>
+              <span style="font-weight:700;min-width:18px;text-align:center;font-size:14px">${S.cart[p.sku]}</span>
+            ` : ''}
+            <button onclick="addItem('${p.sku}')"
+              style="width:28px;height:28px;border-radius:50%;border:none;background:var(--orange);color:#fff;cursor:pointer;font-size:18px;line-height:1;font-family:inherit">+</button>
+          </div>
+        </div>`).join('')}
+    </div>
+    ${cartCount()>0 ? `
+      <div style="position:sticky;bottom:72px;padding:0 14px 8px">
+        <button class="btn-primary" onclick="nav('cart')" style="box-shadow:0 4px 18px rgba(244,124,60,0.45)">
+          View cart · ${cartCount()} items · $${cartTotal().toFixed(2)}
+        </button>
+      </div>` : ''}
+  </div>
+  ${bottomNav('menu')}`;
+}
+
+function screenCart() {
+  const items = Object.entries(S.cart).filter(([,q])=>q>0);
+  return `${backHeader('Your cart','menu')}
+  <div class="content fade-in" style="padding:14px">
+    ${!items.length
+      ? `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;text-align:center">
+          <div style="font-size:48px">🛒</div>
+          <div style="font-weight:600;font-size:17px">Cart is empty</div>
+          <div style="color:var(--muted);font-size:14px">Add some items from the menu</div>
+          <button class="btn-primary" style="max-width:200px;margin-top:8px" onclick="nav('menu')">Browse menu</button>
+        </div>`
+      : `${items.map(([sku,qty])=>{
+          const p=PRODUCTS.find(x=>x.sku===sku); if(!p) return '';
+          return `<div class="card" style="display:flex;align-items:center;gap:12px;padding:13px;margin-bottom:9px">
+            <div style="font-size:28px;width:38px;text-align:center">${p.emoji}</div>
+            <div style="flex:1">
+              <div style="font-weight:600;font-size:13px">${p.name}</div>
+              <div style="font-size:12px;color:var(--muted)">$${p.price.toFixed(2)} each</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px">
+              <button onclick="removeItem('${sku}')"
+                style="width:26px;height:26px;border-radius:50%;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:15px;font-family:inherit">−</button>
+              <span style="font-weight:700;min-width:18px;text-align:center;font-size:13px">${qty}</span>
+              <button onclick="addItem('${sku}')"
+                style="width:26px;height:26px;border-radius:50%;border:none;background:var(--orange);color:#fff;cursor:pointer;font-size:17px;font-family:inherit">+</button>
+            </div>
+            <div style="font-weight:700;color:var(--teal);font-size:14px;min-width:50px;text-align:right">$${(p.price*qty).toFixed(2)}</div>
+          </div>`;}).join('')}
+        <div class="card" style="margin-top:4px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:5px"><span>Subtotal</span><span>$${cartTotal().toFixed(2)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:5px"><span>Delivery</span><span style="color:var(--green);font-weight:600">Free 🎉</span></div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;font-size:17px;border-top:0.5px solid var(--border);padding-top:10px;margin-top:6px">
+            <span>Total</span><span>$${cartTotal().toFixed(2)}</span>
+          </div>
+        </div>
+        <button class="btn-primary" style="margin-top:14px" onclick="nav('checkout')">Proceed to checkout →</button>`}
+  </div>`;
+}
+
+function screenCheckout() {
+  const pxPx = S.pinX/100*390, pxPy = S.pinY/100*170;
+  return `${backHeader('Checkout','cart')}
+  <div class="content fade-in" style="padding:14px;padding-bottom:28px">
+    <div class="card">
+      <div class="section-label">📍 Drop your pin on the beach</div>
+      <div id="bmap" style="border-radius:10px;overflow:hidden;cursor:crosshair;position:relative;width:100%;height:170px;user-select:none;
+        background:linear-gradient(180deg,#87ceeb 0%,#4fc3f7 35%,#2ab5a5 50%,#c8a96e 65%,#e8d5b7 100%)">
+        <svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 390 170" preserveAspectRatio="none">
+          <path d="M0 88 Q60 78 110 84 Q170 92 240 80 Q300 70 390 82 L390 170 L0 170Z" fill="#2ab5a5" opacity="0.6"/>
+          <path d="M0 96 Q90 86 150 92 Q210 98 300 86 Q345 82 390 88 L390 170 L0 170Z" fill="#3ecfbf" opacity="0.4"/>
+          <ellipse cx="300" cy="150" rx="60" ry="13" fill="#e8d5b7" opacity="0.5"/>
+          <ellipse cx="65" cy="154" rx="38" ry="10" fill="#e8d5b7" opacity="0.4"/>
+          <text x="10" y="20" font-size="11" fill="#0d2b4e" opacity="0.6">🌊 Ocean</text>
+          <text x="10" y="162" font-size="11" fill="#0d2b4e" opacity="0.6">🏖️ Beach</text>
+        </svg>
+        ${S.pinPlaced
+          ? `<div style="position:absolute;left:${pxPx}px;top:${pxPy-30}px;font-size:30px;transform:translateX(-50%);pointer-events:none;filter:drop-shadow(0 2px 5px rgba(0,0,0,0.35))">📍</div>
+             <div style="position:absolute;left:${pxPx}px;top:${pxPy+4}px;transform:translateX(-50%);background:#0d2b4e;color:#fff;font-size:10px;padding:2px 9px;border-radius:10px;white-space:nowrap;pointer-events:none">Your spot</div>`
+          : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+               <div style="background:rgba(255,255,255,0.93);border-radius:10px;padding:9px 18px;font-size:13px;font-weight:500;box-shadow:0 2px 10px rgba(0,0,0,0.12)">Tap to drop your pin</div>
+             </div>`}
+      </div>
+      ${S.pinPlaced ? `<div style="font-size:12px;color:var(--green);margin-top:7px;text-align:center;font-weight:600">✓ Pin placed — tap again to adjust</div>` : ''}
+      <div style="margin-top:13px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Spot note <span style="opacity:0.6">(optional)</span></label>
+        <input id="spot-note" type="text" placeholder="e.g. Red umbrella, near lifeguard tower"
+          value="${S.spotNote}"
+          style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;color:var(--navy);background:var(--cream)">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-label">Order summary</div>
+      ${Object.entries(S.cart).filter(([,q])=>q>0).map(([sku,qty])=>{
+        const p=PRODUCTS.find(x=>x.sku===sku); if(!p) return '';
+        return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--navy)">
+          <span>${p.emoji} ${p.name} ×${qty}</span>
+          <span style="font-weight:600">$${(p.price*qty).toFixed(2)}</span>
+        </div>`;}).join('')}
+      <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;font-weight:700;font-size:15px">
+        <span>Total</span><span>$${cartTotal().toFixed(2)}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-label">💳 Payment <span style="color:rgba(0,0,0,0.3);font-weight:400;font-size:10px;text-transform:none">(demo mode)</span></div>
+      <input placeholder="Card number: 4242 4242 4242 4242"
+        style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;margin-bottom:8px;background:var(--cream)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <input placeholder="MM / YY" style="padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;background:var(--cream)">
+        <input placeholder="CVC" style="padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;background:var(--cream)">
+      </div>
+    </div>
+
+    <button class="btn-primary" id="place-btn" onclick="placeOrder()"
+      ${!S.pinPlaced ? 'disabled' : ''}>
+      ${S.pinPlaced ? `Place order · $${cartTotal().toFixed(2)}` : 'Drop your pin first'}
+    </button>
+  </div>`;
+}
+
+function screenTrack() {
+  const o = S.orderPlaced;
+  if (!o) return `${backHeader('Order tracking','home')}
+    <div style="display:flex;align-items:center;justify-content:center;min-height:60vh;flex-direction:column;gap:12px;color:var(--muted)">
+      <div style="font-size:40px">📦</div>
+      <div>No active order yet</div>
+      <button class="btn-primary" style="max-width:180px" onclick="nav('menu')">Start ordering</button>
+    </div>${bottomNav('track')}`;
+
+  const steps = [
+    {l:'Order received', done:true, i:'✅'},
+    {l:'Being prepared', done:true, i:'🧊'},
+    {l:'On the way to you', done:false, i:'🏃'},
+    {l:'Delivered!', done:false, i:'🏖️'}
+  ];
+  return `${backHeader('Order tracking','home')}
+  <div class="content fade-in" style="padding:14px;padding-bottom:80px">
+    <div style="background:var(--navy);border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">
+      <div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Estimated arrival</div>
+      <div style="color:#fff;font-size:36px;font-weight:800;margin:4px 0">~8 min</div>
+      <div style="color:var(--teal2);font-size:12px">Order #${o.id}</div>
+    </div>
+    <div class="card">
+      ${steps.map((s,i)=>`
+        <div style="display:flex;align-items:center;gap:13px;padding:10px 0;${i<steps.length-1?'border-bottom:0.5px solid var(--border)':''}">
+          <span style="font-size:20px;width:28px;text-align:center">${s.i}</span>
+          <span style="flex:1;font-size:14px;color:${s.done?'var(--navy)':'var(--muted)'};font-weight:${s.done?'500':'400'}">${s.l}</span>
+          ${s.done ? `<span style="font-size:11px;color:var(--green);font-weight:700">Done</span>`
+                   : `<span style="width:8px;height:8px;border-radius:50%;background:rgba(0,0,0,0.12);display:inline-block"></span>`}
+        </div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="section-label">Your items</div>
+      ${o.items.map(it=>`<div style="font-size:13px;color:var(--muted);padding:3px 0">${it.emoji} ${it.name} ×${it.qty}</div>`).join('')}
+      <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:9px;font-weight:700;font-size:14px">Total: $${o.total.toFixed(2)}</div>
+    </div>
+    <div style="background:#e6f7f5;border:0.5px solid var(--teal);border-radius:12px;padding:14px;text-align:center">
+      <div style="font-size:14px;color:#0d6e63;font-weight:600">📍 Delivering to your pinned spot</div>
+      ${o.note ? `<div style="font-size:12px;color:#0d6e63;margin-top:5px;opacity:0.85">"${o.note}"</div>` : ''}
+    </div>
+  </div>
+  ${bottomNav('track')}`;
+}
+
+function screenProfile() {
+  return `${backHeader('My profile', 'home')}
+  <div class="content fade-in" style="padding:14px;padding-bottom:80px">
+    <div class="card" style="display:flex;align-items:center;gap:14px">
+      <div style="width:54px;height:54px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;font-weight:700">AR</div>
+      <div>
+        <div style="font-weight:700;font-size:16px">Alex Rivera</div>
+        <div style="font-size:13px;color:var(--muted)">alex@example.com</div>
+      </div>
+    </div>
+    ${[
+      {i:'📦', l:'Order history', a:`nav('history')`},
+      {i:'🎧', l:'Support',       a:`nav('support')`},
+      {i:'⚙️', l:'Operator panel', a:`nav('admin')`}
+    ].map(m=>`
+      <button onclick="${m.a}"
+        style="width:100%;background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px;
+        display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;font-family:inherit">
+        <span style="font-size:20px">${m.i}</span>
+        <span style="font-size:14px;font-weight:500;flex:1;color:var(--navy)">${m.l}</span>
+        <span style="color:var(--muted);font-size:18px">›</span>
+      </button>`).join('')}
+  </div>
+  ${bottomNav('profile')}`;
+}
+
+function screenHistory() {
+  return `${backHeader('Order history','profile')}
+  <div class="content fade-in" style="padding:14px">
+    ${!S.orders.length
+      ? `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;text-align:center;color:var(--muted)">
+          <div style="font-size:44px">📦</div>
+          <div style="color:var(--navy);font-weight:600;font-size:16px">No orders yet</div>
+          <div style="font-size:13px">Your order history will appear here.</div>
+        </div>`
+      : [...S.orders].reverse().map(o=>`
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+            <div>
+              <div style="font-weight:700;font-size:14px">Order #${o.id}</div>
+              <div style="font-size:11px;color:var(--muted)">${o.date}</div>
+            </div>
+            <span class="badge badge-${o.status.toLowerCase()}">${o.status}</span>
+          </div>
+          ${o.items.map(it=>`<div style="font-size:13px;color:var(--muted);padding:2px 0">${it.emoji} ${it.name} ×${it.qty}</div>`).join('')}
+          <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:9px;font-weight:700;font-size:14px">$${o.total.toFixed(2)}</div>
+        </div>`).join('')}
+  </div>`;
+}
+
+function screenSupport() {
+  return `${backHeader('Support','profile')}
+  <div class="content fade-in" style="padding:14px">
+    <div class="card">
+      <div class="section-label">Quick help</div>
+      ${[['📦','Where is my order?'],['💳','Payment issue'],['🔄','Wrong items delivered'],['📍','Location problem']].map(([icon,label])=>`
+        <div style="padding:12px 0;border-bottom:0.5px solid var(--border);display:flex;gap:10px;align-items:center;font-size:14px;color:var(--navy);cursor:pointer">
+          ${icon} <span style="flex:1">${label}</span><span style="color:var(--muted)">›</span>
+        </div>`).join('')}
+    </div>
+    <div class="card">
+      <div class="section-label">Message us</div>
+      ${S.supportSent
+        ? `<div style="text-align:center;padding:20px 0">
+            <div style="font-size:36px;margin-bottom:10px">✅</div>
+            <div style="font-weight:600;font-size:16px">Message sent!</div>
+            <div style="font-size:13px;color:var(--muted);margin-top:6px">We'll respond in under 5 minutes.</div>
+          </div>`
+        : `<textarea id="support-input" placeholder="Describe your issue..." rows="4"
+            style="width:100%;padding:11px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;resize:none;color:var(--navy);background:var(--cream)">${S.supportMsg}</textarea>
+           <button class="btn-primary" style="margin-top:10px;background:var(--navy)" onclick="sendSupport()">Send message</button>`}
+    </div>
+  </div>`;
+}
+
+// ─── ADMIN PANEL ─────────────────────────────────────────────────────────────
+function renderAdmin() {
+  const orders = S.orders;
+  const rev = orders.reduce((s,o)=>s+o.total, 0);
+  const delivered = orders.filter(o=>o.status==='Delivered').length;
+  const pending   = orders.filter(o=>o.status==='Preparing').length;
+  const ic = {};
+  orders.forEach(o=>o.items.forEach(it=>{ ic[it.name]=(ic[it.name]||0)+it.qty; }));
+  const top = Object.entries(ic).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const vw = S.adminView;
+
+  document.getElementById('app').innerHTML = `
+    <div class="header" style="justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:8px">
+        ${towerSVG(34)}
+        <div>
+          <span style="color:#fff;font-size:15px;font-weight:700">playa</span>
+          <span style="color:#f47c3c;font-size:15px;font-weight:700">+</span>
+          <div style="color:#3ecfbf;font-size:9px;letter-spacing:2px">OPERATOR</div>
+        </div>
+      </div>
+      <button onclick="nav('profile')"
+        style="background:rgba(255,255,255,0.15);border:none;border-radius:8px;padding:6px 13px;color:#fff;font-size:12px;cursor:pointer;font-family:inherit">
+        ← Customer view
+      </button>
+    </div>
+    <div style="display:flex;border-bottom:0.5px solid var(--border);background:#fff;position:sticky;top:56px;z-index:40">
+      ${['dashboard','orders','items'].map(v=>`
+        <button onclick="setAdminView('${v}')"
+          style="flex:1;padding:11px 4px;border:none;background:transparent;font-size:12px;font-weight:${vw===v?'700':'400'};
+          color:${vw===v?'var(--navy)':'var(--muted)'};border-bottom:${vw===v?'2.5px solid #f47c3c':'2px solid transparent'};
+          cursor:pointer;text-transform:capitalize;font-family:inherit">${v}</button>`).join('')}
+    </div>
+    <div style="background:var(--cream);padding:14px;overflow-y:auto;height:calc(100dvh - 112px)">
+    ${vw==='dashboard' ? `
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px">
+        ${[
+          [`$${rev.toFixed(2)}`,'Revenue','💰','var(--teal)'],
+          [orders.length,'Orders','📦','var(--navy)'],
+          [delivered,'Delivered','✅','var(--green)'],
+          [pending,'Pending','⏳','var(--orange)']
+        ].map(([v,l,i,c])=>`
+          <div class="card" style="margin-bottom:0">
+            <div style="font-size:20px;margin-bottom:3px">${i}</div>
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px">${l}</div>
+            <div style="font-size:22px;font-weight:800;color:${c};margin-top:3px">${v}</div>
+          </div>`).join('')}
+      </div>
+      <div class="section-label" style="margin-bottom:10px">Recent orders</div>
+      ${!orders.length
+        ? `<div style="text-align:center;padding:32px;color:var(--muted);font-size:13px">No orders yet — place a test order from the customer view!</div>`
+        : [...orders].reverse().slice(0,4).map(o=>adminCard(o)).join('')}`
+    : vw==='orders' ? `
+      ${!orders.length
+        ? `<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">No orders yet.</div>`
+        : [...orders].reverse().map(o=>adminCard(o)).join('')}`
+    : `
+      <div class="section-label" style="margin-bottom:10px">Best sellers</div>
+      ${!top.length
+        ? `<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">No sales data yet.</div>`
+        : top.map(([name,qty],i)=>`
+          <div class="card" style="display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:8px">
+            <div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;
+              background:${i===0?'#f5a623':i===1?'#a8a8a8':'#cd7f32'}">${i+1}</div>
+            <span style="flex:1;font-size:13px;font-weight:500">${name}</span>
+            <span style="background:#e6f7f5;color:#0d6e63;font-weight:700;font-size:12px;padding:4px 11px;border-radius:20px">${qty} sold</span>
+          </div>`).join('')}`}
+    </div>`;
+}
+
+function adminCard(o) {
+  return `<div class="card" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+      <div style="font-weight:700;font-size:14px">Order #${o.id}</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="badge badge-${o.status.toLowerCase()}">${o.status}</span>
+        ${o.status!=='Delivered'
+          ? `<button onclick="markDone(${o.id})"
+              style="font-size:11px;padding:4px 11px;background:var(--teal);color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-family:inherit">✓ Deliver</button>`
+          : ''}
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${o.date} · <strong style="color:var(--navy)">$${o.total.toFixed(2)}</strong></div>
+    ${o.items.map(it=>`<div style="font-size:12px;color:var(--muted)">${it.emoji} ${it.name} ×${it.qty}</div>`).join('')}
+    ${o.note ? `<div style="margin-top:7px;font-size:11px;background:#e6f7f5;padding:5px 10px;border-radius:7px;color:#0d6e63;font-weight:500">📍 ${o.note}</div>` : ''}
+  </div>`;
+}
+
+// ─── ACTIONS ─────────────────────────────────────────────────────────────────
+function nav(v) {
+  if (v==='admin') { S.view='admin'; renderAdmin(); return; }
+  S.view=v; render();
+}
+function setFilter(f) { S.catFilter=f; render(); }
+function setAdminView(v) { S.adminView=v; renderAdmin(); }
+function addItem(sku) { S.cart[sku]=(S.cart[sku]||0)+1; render(); }
+function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; render(); }
+function sendSupport() { S.supportMsg=document.getElementById('support-input')?.value||''; S.supportSent=true; render(); }
+function markDone(id) {
+  const o=S.orders.find(x=>x.id===id);
+  if(o){ o.status='Delivered'; save(); renderAdmin(); }
+}
+function placeOrder() {
+  if(!S.pinPlaced) return;
+  const note = document.getElementById('spot-note')?.value || S.spotNote;
+  const items = Object.entries(S.cart).filter(([,q])=>q>0).map(([sku,qty])=>{
+    const p=PRODUCTS.find(x=>x.sku===sku);
+    return {name:p.name, emoji:p.emoji, qty, price:p.price};
+  });
+  const o = { id:1000+S.orders.length, date:new Date().toLocaleDateString(), status:'Preparing', total:cartTotal(), items, note };
+  S.orders.push(o); save();
+  S.orderPlaced=o; S.cart={}; S.pinPlaced=false; S.spotNote='';
+  nav('track');
+}
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+function render() {
+  const app = document.getElementById('app');
+  const screens = {
+    loading:  screenLoading,
+    error:    screenError,
+    home:     screenHome,
+    menu:     screenMenu,
+    cart:     screenCart,
+    checkout: screenCheckout,
+    track:    screenTrack,
+    profile:  screenProfile,
+    history:  screenHistory,
+    support:  screenSupport,
+  };
+  app.innerHTML = (screens[S.view] || screenHome)();
+  if (S.view==='checkout') bindCheckout();
+  window.scrollTo(0,0);
+}
+
+function bindCheckout() {
+  const map = document.getElementById('bmap');
+  if (map) {
+    map.addEventListener('click', e => {
+      const r=map.getBoundingClientRect();
+      S.pinX=((e.clientX-r.left)/r.width)*100;
+      S.pinY=((e.clientY-r.top)/r.height)*100;
+      S.pinPlaced=true; render(); bindCheckout();
+    });
+  }
+  const sn = document.getElementById('spot-note');
+  if (sn) sn.addEventListener('input', e=>{ S.spotNote=e.target.value; });
+}
+
+// ─── BOOT ────────────────────────────────────────────────────────────────────
+render();        // show loading screen immediately
+loadProducts();  // fetch from Google Sheets
+</script>
+</body>
+</html>
