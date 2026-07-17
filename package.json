@@ -1,0 +1,8 @@
+{
+  "name": "playaplus",
+  "version": "1.0.0",
+  "description": "Playa+ Beach Delivery App",
+  "dependencies": {
+    "stripe": "^14.0.0"
+  }
+}

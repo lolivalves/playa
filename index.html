@@ -448,19 +448,30 @@ function screenCheckout() {
     </div>
 
     <div class="card">
-      <div class="section-label">💳 Payment <span style="color:rgba(0,0,0,0.3);font-weight:400;font-size:10px;text-transform:none">(demo mode)</span></div>
-      <input placeholder="Card number: 4242 4242 4242 4242"
-        style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;margin-bottom:8px;background:var(--cream)">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <input placeholder="MM / YY" style="padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;background:var(--cream)">
-        <input placeholder="CVC" style="padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;background:var(--cream)">
+      <div class="section-label">💳 Payment</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;margin-bottom:4px">
+        <div style="display:flex;gap:6px">
+          <span style="font-size:22px">💳</span>
+          <span style="font-size:22px"></span>
+          <span style="font-size:22px">🍎</span>
+          <span style="font-size:22px">🇬</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">Card · Apple Pay · Google Pay</div>
+      </div>
+      <div style="background:#f0faf9;border:0.5px solid var(--teal);border-radius:9px;padding:10px 13px;font-size:12px;color:#0d6e63;line-height:1.5">
+        🔒 You'll be taken to Stripe's secure checkout page to complete payment. Your card details are never stored on our servers.
       </div>
     </div>
 
     <button class="btn-primary" id="place-btn" onclick="placeOrder()"
-      ${!S.pinPlaced ? 'disabled' : ''}>
-      ${S.pinPlaced ? `Place order · $${cartTotal().toFixed(2)}` : 'Drop your pin first'}
+      ${!S.pinPlaced ? 'disabled' : ''} style="position:relative">
+      ${S.pinPlaced
+        ? `<span id="btn-label">Pay $${cartTotal().toFixed(2)} securely →</span>`
+        : 'Drop your pin first'}
     </button>
+    <div style="text-align:center;margin-top:8px;font-size:11px;color:var(--muted)">
+      Powered by <strong>Stripe</strong> · SSL encrypted
+    </div>
   </div>`;
 }
 
@@ -685,17 +696,71 @@ function markDone(id) {
   const o=S.orders.find(x=>x.id===id);
   if(o){ o.status='Delivered'; save(); renderAdmin(); }
 }
-function placeOrder() {
-  if(!S.pinPlaced) return;
+async function placeOrder() {
+  if (!S.pinPlaced) return;
+
   const note = document.getElementById('spot-note')?.value || S.spotNote;
   const items = Object.entries(S.cart).filter(([,q])=>q>0).map(([sku,qty])=>{
-    const p=PRODUCTS.find(x=>x.sku===sku);
-    return {name:p.name, emoji:p.emoji, qty, price:p.price};
+    const p = PRODUCTS.find(x=>x.sku===sku);
+    return { name:p.name, emoji:p.emoji, desc:p.desc||'', qty, price:p.price };
   });
-  const o = { id:1000+S.orders.length, date:new Date().toLocaleDateString(), status:'Preparing', total:cartTotal(), items, note };
-  S.orders.push(o); save();
-  S.orderPlaced=o; S.cart={}; S.pinPlaced=false; S.spotNote='';
-  nav('track');
+
+  // Show loading on button
+  const btn = document.getElementById('place-btn');
+  const lbl = document.getElementById('btn-label');
+  if (btn) btn.disabled = true;
+  if (lbl) lbl.innerHTML = '⏳ Redirecting to payment…';
+
+  // Save pending order so we can confirm it after Stripe redirects back
+  const pendingOrder = {
+    id: 1000 + S.orders.length,
+    date: new Date().toLocaleDateString(),
+    status: 'Preparing',
+    total: cartTotal(),
+    items,
+    note
+  };
+  localStorage.setItem('playa_pending_order', JSON.stringify(pendingOrder));
+
+  try {
+    const response = await fetch('/api/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, spotNote: note, pinX: S.pinX, pinY: S.pinY }),
+    });
+    const data = await response.json();
+    if (data.url) {
+      window.location.href = data.url; // → Stripe hosted checkout page
+    } else {
+      throw new Error(data.error || 'Payment failed');
+    }
+  } catch (err) {
+    console.error('Checkout error:', err);
+    alert('Something went wrong. Please try again.');
+    if (btn) btn.disabled = false;
+    if (lbl) lbl.innerHTML = `Pay $${cartTotal().toFixed(2)} securely →`;
+  }
+}
+
+// ─── SUCCESS SCREEN (returned from Stripe) ───────────────────────────────────
+function screenSuccess() {
+  const o = S.orderPlaced;
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:32px;text-align:center;background:var(--cream)">
+    <div style="font-size:72px;margin-bottom:8px">🎉</div>
+    <div style="font-size:24px;font-weight:800;color:var(--navy);margin-bottom:8px">Order confirmed!</div>
+    <div style="font-size:14px;color:var(--muted);margin-bottom:28px;line-height:1.5">
+      Payment received. Your order is being prepared<br>and will be at your spot shortly.
+    </div>
+    ${o ? `
+    <div style="background:#fff;border:0.5px solid var(--border);border-radius:14px;padding:18px;width:100%;max-width:320px;margin-bottom:24px;text-align:left">
+      <div style="font-size:11px;font-weight:600;color:var(--teal);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Your order #${o.id}</div>
+      ${o.items.map(it=>`<div style="font-size:13px;color:var(--muted);padding:3px 0">${it.emoji} ${it.name} ×${it.qty}</div>`).join('')}
+      <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:10px;font-weight:700;font-size:15px;color:var(--navy)">Total paid: $${o.total.toFixed(2)}</div>
+      ${o.note ? `<div style="margin-top:8px;font-size:12px;background:#e6f7f5;padding:6px 10px;border-radius:8px;color:#0d6e63">📍 ${o.note}</div>` : ''}
+    </div>` : ''}
+    <button class="btn-primary" style="max-width:280px" onclick="nav('track')">Track my order →</button>
+    <button onclick="nav('home')" style="margin-top:12px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Back to home</button>
+  </div>`;
 }
 
 // ─── RENDER ───────────────────────────────────────────────────────────────────
@@ -712,6 +777,7 @@ function render() {
     profile:  screenProfile,
     history:  screenHistory,
     support:  screenSupport,
+    success:  screenSuccess,
   };
   app.innerHTML = (screens[S.view] || screenHome)();
   if (S.view==='checkout') bindCheckout();
@@ -733,8 +799,32 @@ function bindCheckout() {
 }
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
-render();        // show loading screen immediately
-loadProducts();  // fetch from Google Sheets
+(function boot() {
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get('session_id')) {
+    // ✅ Returning from successful Stripe payment
+    const pending = localStorage.getItem('playa_pending_order');
+    if (pending) {
+      const o = JSON.parse(pending);
+      S.orders.push(o);
+      save();
+      S.orderPlaced = o;
+      localStorage.removeItem('playa_pending_order');
+    }
+    S.view = 'success';
+    // Clean the URL so refreshing doesn't re-trigger this
+    window.history.replaceState({}, '', '/');
+
+  } else if (params.get('cancelled')) {
+    // ❌ Customer cancelled on Stripe — go back to checkout
+    S.view = 'checkout';
+    window.history.replaceState({}, '', '/');
+  }
+
+  render();       // show loading or success screen immediately
+  loadProducts(); // fetch from Google Sheets
+})();
 </script>
 </body>
 </html>
