@@ -132,10 +132,14 @@ const PROD_EMOJI  = {
 };
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
+const CART_KEY = 'playa_cart_v1';
+const VIEW_KEY  = 'playa_view_v1';
+const SAFE_VIEWS = ['home','menu','cart','track','profile','history','support'];
+
 let PRODUCTS = [];
 let S = {
   view: 'loading',
-  cart: {},
+  cart: JSON.parse(localStorage.getItem(CART_KEY) || '{}'),
   orders: JSON.parse(localStorage.getItem(ORDERS_KEY) || '[]'),
   catFilter: 'All',
   pinPlaced: false, pinX: 55, pinY: 65,
@@ -146,6 +150,10 @@ let S = {
   supportMsg: ''
 };
 function save() { localStorage.setItem(ORDERS_KEY, JSON.stringify(S.orders)); }
+function saveCart() {
+  localStorage.setItem(CART_KEY, JSON.stringify(S.cart));
+  if (SAFE_VIEWS.includes(S.view)) localStorage.setItem(VIEW_KEY, S.view);
+}
 function cartCount() { return Object.values(S.cart).reduce((a,b)=>a+b,0); }
 function cartTotal() {
   return Object.entries(S.cart).reduce((sum,[sku,qty]) => {
@@ -188,7 +196,9 @@ async function loadProducts() {
         price: parseFloat(r['Selling Price ($)']) || 0,
         emoji: PROD_EMOJI[r['SKU']] || CAT_EMOJI[r['Category']] || '🏖️'
       }));
-    S.view = 'home';
+    // Restore last view the user was on (cart, menu, etc.)
+    const savedView = localStorage.getItem(VIEW_KEY);
+    S.view = (savedView && SAFE_VIEWS.includes(savedView)) ? savedView : 'home';
   } catch(e) {
     S.view = 'error';
   }
@@ -377,7 +387,11 @@ function screenCart() {
       : `${items.map(([sku,qty])=>{
           const p=PRODUCTS.find(x=>x.sku===sku); if(!p) return '';
           return `<div class="card" style="display:flex;align-items:center;gap:12px;padding:13px;margin-bottom:9px">
-            <div style="font-size:28px;width:38px;text-align:center">${p.emoji}</div>
+            <div style="width:50px;height:50px;border-radius:9px;background:var(--sand);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;overflow:hidden">
+              ${p.img
+                ? `<img src="${p.img}" style="width:50px;height:50px;object-fit:cover;border-radius:9px" onerror="this.parentNode.innerHTML='${p.emoji}'">`
+                : p.emoji}
+            </div>
             <div style="flex:1">
               <div style="font-weight:600;font-size:13px">${p.name}</div>
               <div style="font-size:12px;color:var(--muted)">$${p.price.toFixed(2)} each</div>
@@ -689,8 +703,8 @@ function nav(v) {
 }
 function setFilter(f) { S.catFilter=f; render(); }
 function setAdminView(v) { S.adminView=v; renderAdmin(); }
-function addItem(sku) { S.cart[sku]=(S.cart[sku]||0)+1; render(); }
-function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; render(); }
+function addItem(sku) { S.cart[sku]=(S.cart[sku]||0)+1; saveCart(); render(); }
+function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
 function sendSupport() { S.supportMsg=document.getElementById('support-input')?.value||''; S.supportSent=true; render(); }
 function markDone(id) {
   const o=S.orders.find(x=>x.id===id);
@@ -811,6 +825,8 @@ function bindCheckout() {
       save();
       S.orderPlaced = o;
       localStorage.removeItem('playa_pending_order');
+      localStorage.removeItem(CART_KEY);
+      localStorage.removeItem(VIEW_KEY);
     }
     S.view = 'success';
     // Clean the URL so refreshing doesn't re-trigger this
