@@ -10,8 +10,13 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Detect the origin domain dynamically so redirects always go back to
+  // wherever the request came from (custom domain, Vercel preview URL, etc.)
+  const origin = req.headers.origin || req.headers.referer || 'https://www.playaplus.app';
+  const baseUrl = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+
   // Allow requests from your domain (CORS)
-  res.setHeader('Access-Control-Allow-Origin', 'https://playaplusapp.com');
+  res.setHeader('Access-Control-Allow-Origin', baseUrl);
   res.setHeader('Access-Control-Allow-Methods', 'POST');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -56,7 +61,7 @@ module.exports = async function handler(req, res) {
       spot_note: spotNote || 'No note provided',
       pin_x: String(Math.round(pinX || 0)),
       pin_y: String(Math.round(pinY || 0)),
-      order_source: 'playaplusapp.com',
+      order_source: 'playaplus.app',
     };
 
     // Create the Stripe Checkout Session
@@ -65,8 +70,8 @@ module.exports = async function handler(req, res) {
       line_items: lineItems,
       mode: 'payment',
       // Where to send the customer after payment
-      success_url: `https://playaplusapp.com/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:  `https://playaplusapp.com/?cancelled=true`,
+      success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url:  `${baseUrl}/?cancelled=true`,
       metadata,
       // Pre-fill customer details if you have them
       // customer_email: req.body.email,
