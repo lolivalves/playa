@@ -16,7 +16,7 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   try {
-    const { items, spotNote, pinX, pinY } = req.body;
+    const { items, spotNote, pinX, pinY, service_fee, fee_label } = req.body;
 
     if (!items || !items.length) {
       return res.status(400).json({ error: 'No items in cart' });
@@ -35,9 +35,21 @@ module.exports = async function handler(req, res) {
       quantity: item.qty,
     }));
 
-    // Add a delivery fee line item (free for now, but Stripe needs at least 50 cents)
-    // If you ever want to charge delivery, change unit_amount here
-    // lineItems.push({ price_data: { currency:'usd', product_data:{ name:'🏖️ Beach Delivery' }, unit_amount: 99 }, quantity:1 });
+    // Add service fee as a Stripe line item (only if > 0)
+    const fee = parseFloat(service_fee) || 0;
+    if (fee > 0) {
+      lineItems.push({
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: fee_label || 'Service fee',
+            description: 'Beach delivery service fee',
+          },
+          unit_amount: Math.round(fee * 100),
+        },
+        quantity: 1,
+      });
+    }
 
     // Build metadata so you can see spot info in your Stripe dashboard
     const metadata = {

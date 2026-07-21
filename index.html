@@ -117,8 +117,12 @@
 
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
-const SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=0&single=true&output=csv';
+const SHEET_CSV  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=0&single=true&output=csv';
+const CONFIG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=611850101&single=true&output=csv';
 const ORDERS_KEY = 'playa_orders_v1';
+
+// Live config values (loaded from Config sheet)
+let CONFIG = { service_fee: 4.99, fee_label: 'Service fee' };
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const CAT_EMOJI   = { Drinks:'💧', Snacks:'🥨', Food:'🥗', 'Ice Cream':'🍦' };
@@ -155,11 +159,16 @@ function saveCart() {
   if (SAFE_VIEWS.includes(S.view)) localStorage.setItem(VIEW_KEY, S.view);
 }
 function cartCount() { return Object.values(S.cart).reduce((a,b)=>a+b,0); }
-function cartTotal() {
+function cartSubtotal() {
   return Object.entries(S.cart).reduce((sum,[sku,qty]) => {
     const p = PRODUCTS.find(x=>x.sku===sku);
     return sum + (p ? p.price*qty : 0);
   }, 0);
+}
+function cartTotal() {
+  // grandTotal = subtotal + service fee (when cart has items)
+  const sub = cartSubtotal();
+  return sub > 0 ? sub + (CONFIG.service_fee || 0) : 0;
 }
 
 // ─── CSV PARSER ──────────────────────────────────────────────────────────────
@@ -180,8 +189,25 @@ function parseCSV(text) {
   });
 }
 
+async function loadConfig() {
+  try {
+    const r = await fetch(CONFIG_CSV);
+    const text = await r.text();
+    const rows = parseCSV(text);
+    rows.forEach(row => {
+      const key = (row['Key'] || '').trim().toLowerCase();
+      const val = (row['Value'] || '').trim();
+      if (key === 'service_fee') CONFIG.service_fee = parseFloat(val) || 0;
+      if (key === 'fee_label')   CONFIG.fee_label   = val || 'Service fee';
+    });
+  } catch(e) {
+    console.warn('Config sheet unavailable, using defaults.');
+  }
+}
+
 async function loadProducts() {
   try {
+    await loadConfig(); // load fee before rendering anything
     const r = await fetch(SHEET_CSV);
     const text = await r.text();
     const rows = parseCSV(text);
@@ -406,9 +432,17 @@ function screenCart() {
             <div style="font-weight:700;color:var(--teal);font-size:14px;min-width:50px;text-align:right">$${(p.price*qty).toFixed(2)}</div>
           </div>`;}).join('')}
         <div class="card" style="margin-top:4px">
-          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:5px"><span>Subtotal</span><span>$${cartTotal().toFixed(2)}</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:5px"><span>Delivery</span><span style="color:var(--green);font-weight:600">Free 🎉</span></div>
-          <div style="display:flex;justify-content:space-between;font-weight:700;font-size:17px;border-top:0.5px solid var(--border);padding-top:10px;margin-top:6px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:5px">
+            <span>Subtotal</span><span>$${cartSubtotal().toFixed(2)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:5px">
+            <span>Delivery</span><span style="color:var(--green);font-weight:600">Free 🎉</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:5px;padding-bottom:8px;border-bottom:0.5px solid var(--border)">
+            <span>${CONFIG.fee_label}</span>
+            <span>${CONFIG.service_fee > 0 ? `$${CONFIG.service_fee.toFixed(2)}` : '<span style="color:var(--green);font-weight:600">Free 🎉</span>'}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-weight:700;font-size:17px;padding-top:8px;margin-top:2px">
             <span>Total</span><span>$${cartTotal().toFixed(2)}</span>
           </div>
         </div>
@@ -456,7 +490,11 @@ function screenCheckout() {
           <span>${p.emoji} ${p.name} ×${qty}</span>
           <span style="font-weight:600">$${(p.price*qty).toFixed(2)}</span>
         </div>`;}).join('')}
-      <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;font-weight:700;font-size:15px">
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--muted)">
+        <span>${CONFIG.fee_label}</span>
+        <span>${CONFIG.service_fee > 0 ? `$${CONFIG.service_fee.toFixed(2)}` : 'Free'}</span>
+      </div>
+      <div style="border-top:0.5px solid var(--border);margin-top:8px;padding-top:10px;display:flex;justify-content:space-between;font-weight:700;font-size:15px">
         <span>Total</span><span>$${cartTotal().toFixed(2)}</span>
       </div>
     </div>
@@ -731,6 +769,9 @@ async function placeOrder() {
     date: new Date().toLocaleDateString(),
     status: 'Preparing',
     total: cartTotal(),
+    subtotal: cartSubtotal(),
+    service_fee: CONFIG.service_fee,
+    fee_label: CONFIG.fee_label,
     items,
     note
   };
@@ -740,7 +781,7 @@ async function placeOrder() {
     const response = await fetch('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items, spotNote: note, pinX: S.pinX, pinY: S.pinY }),
+      body: JSON.stringify({ items, spotNote: note, pinX: S.pinX, pinY: S.pinY, service_fee: CONFIG.service_fee, fee_label: CONFIG.fee_label }),
     });
     const data = await response.json();
     if (data.url) {
@@ -769,7 +810,11 @@ function screenSuccess() {
     <div style="background:#fff;border:0.5px solid var(--border);border-radius:14px;padding:18px;width:100%;max-width:320px;margin-bottom:24px;text-align:left">
       <div style="font-size:11px;font-weight:600;color:var(--teal);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Your order #${o.id}</div>
       ${o.items.map(it=>`<div style="font-size:13px;color:var(--muted);padding:3px 0">${it.emoji} ${it.name} ×${it.qty}</div>`).join('')}
-      <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:10px;font-weight:700;font-size:15px;color:var(--navy)">Total paid: $${o.total.toFixed(2)}</div>
+      <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:8px">
+        ${o.subtotal ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:3px"><span>Subtotal</span><span>$${o.subtotal.toFixed(2)}</span></div>` : ''}
+        ${o.service_fee > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px"><span>${o.fee_label||'Service fee'}</span><span>$${o.service_fee.toFixed(2)}</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;color:var(--navy)"><span>Total paid</span><span>$${o.total.toFixed(2)}</span></div>
+      </div>
       ${o.note ? `<div style="margin-top:8px;font-size:12px;background:#e6f7f5;padding:6px 10px;border-radius:8px;color:#0d6e63">📍 ${o.note}</div>` : ''}
     </div>` : ''}
     <button class="btn-primary" style="max-width:280px" onclick="nav('track')">Track my order →</button>
