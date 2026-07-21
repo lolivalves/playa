@@ -159,6 +159,9 @@ function saveCart() {
   if (SAFE_VIEWS.includes(S.view)) localStorage.setItem(VIEW_KEY, S.view);
 }
 function cartCount() { return Object.values(S.cart).reduce((a,b)=>a+b,0); }
+function inCart(sku) { return S.cart[sku] || 0; }
+function stockLeft(p) { return (p.inventory ?? 999) - inCart(p.sku); }
+function isOutOfStock(p) { return stockLeft(p) <= 0; }
 function cartSubtotal() {
   return Object.entries(S.cart).reduce((sum,[sku,qty]) => {
     const p = PRODUCTS.find(x=>x.sku===sku);
@@ -212,15 +215,19 @@ async function loadProducts() {
     const text = await r.text();
     const rows = parseCSV(text);
     PRODUCTS = rows
-      .filter(r => r['Active']==='Yes')
+      .filter(r => {
+        const active = (r['Active'] || '').trim().toLowerCase();
+        return active === 'yes' || active === 'active';
+      })
       .map(r => ({
-        sku:   r['SKU'],
-        name:  r['Product Name'],
-        desc:  r['Description'],
-        cat:   r['Category'],
-        img:   r['Product Image URL'] || '',
-        price: parseFloat(r['Selling Price ($)']) || 0,
-        emoji: PROD_EMOJI[r['SKU']] || CAT_EMOJI[r['Category']] || '🏖️'
+        sku:       r['SKU'],
+        name:      r['Product Name'],
+        desc:      r['Description'],
+        cat:       r['Category'],
+        img:       r['Product Image URL'] || '',
+        price:     parseFloat(r['Selling Price ($)']) || 0,
+        emoji:     PROD_EMOJI[r['SKU']] || CAT_EMOJI[r['Category']] || '🏖️',
+        inventory: parseInt(r['Inventory'] || r['inventory'] || '999', 10),
       }));
     // Restore last view the user was on (cart, menu, etc.)
     const savedView = localStorage.getItem(VIEW_KEY);
@@ -368,10 +375,10 @@ function screenMenu() {
     <div style="padding:10px 14px">
       ${filtered.map(p=>`
         <div class="card" style="margin-bottom:9px;display:flex;align-items:center;gap:12px;padding:12px">
-          <div style="width:54px;height:54px;border-radius:10px;background:var(--sand);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;overflow:hidden">
+          <div style="width:54px;height:54px;border-radius:10px;background:var(--sand);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;overflow:hidden;position:relative">
             ${p.img
-              ? `<img src="${p.img}" style="width:54px;height:54px;object-fit:cover;border-radius:10px" onerror="this.parentNode.innerHTML='${p.emoji}'">`
-              : p.emoji}
+              ? `<img src="${p.img}" style="width:54px;height:54px;object-fit:cover;border-radius:10px;${isOutOfStock(p)?'opacity:0.4;filter:grayscale(1)':''}" onerror="this.parentNode.innerHTML='${p.emoji}'">`
+              : `<span style="${isOutOfStock(p)?'opacity:0.4;filter:grayscale(1)':''}">${p.emoji}</span>`}
           </div>
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;color:var(--navy);line-height:1.3">${p.name}</div>
@@ -379,13 +386,23 @@ function screenMenu() {
             <div style="font-weight:700;color:var(--teal);font-size:15px">$${p.price.toFixed(2)}</div>
           </div>
           <div style="display:flex;align-items:center;gap:7px;flex-shrink:0">
-            ${(S.cart[p.sku]||0)>0 ? `
-              <button onclick="removeItem('${p.sku}')"
-                style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:16px;color:var(--navy);font-family:inherit">−</button>
-              <span style="font-weight:700;min-width:18px;text-align:center;font-size:14px">${S.cart[p.sku]}</span>
-            ` : ''}
-            <button onclick="addItem('${p.sku}')"
-              style="width:28px;height:28px;border-radius:50%;border:none;background:var(--orange);color:#fff;cursor:pointer;font-size:18px;line-height:1;font-family:inherit">+</button>
+            ${isOutOfStock(p)
+              ? `<span style="font-size:10px;font-weight:700;color:#fff;background:#e53e3e;padding:4px 8px;border-radius:20px;letter-spacing:0.5px;white-space:nowrap">OUT OF STOCK</span>`
+              : `${inCart(p.sku)>0 ? `
+                  <button onclick="removeItem('${p.sku}')"
+                    style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:16px;color:var(--navy);font-family:inherit">−</button>
+                  <span style="font-weight:700;min-width:18px;text-align:center;font-size:14px">${inCart(p.sku)}</span>
+                ` : ''}
+                ${stockLeft(p) <= 3 && stockLeft(p) > 0
+                  ? `<div style="position:relative;display:inline-block">
+                      <button onclick="addItem('${p.sku}')"
+                        style="width:28px;height:28px;border-radius:50%;border:none;background:var(--orange);color:#fff;cursor:pointer;font-size:18px;line-height:1;font-family:inherit">+</button>
+                      <span style="position:absolute;top:-6px;right:-8px;background:#f59e0b;color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:8px;white-space:nowrap">${stockLeft(p)} left</span>
+                    </div>`
+                  : `<button onclick="addItem('${p.sku}')"
+                      style="width:28px;height:28px;border-radius:50%;border:none;background:var(--orange);color:#fff;cursor:pointer;font-size:18px;line-height:1;font-family:inherit">+</button>`
+                }`
+            }
           </div>
         </div>`).join('')}
     </div>
@@ -741,7 +758,13 @@ function nav(v) {
 }
 function setFilter(f) { S.catFilter=f; render(); }
 function setAdminView(v) { S.adminView=v; renderAdmin(); }
-function addItem(sku) { S.cart[sku]=(S.cart[sku]||0)+1; saveCart(); render(); }
+function addItem(sku) {
+  const p = PRODUCTS.find(x=>x.sku===sku);
+  if (!p) return;
+  if (isOutOfStock(p)) return; // belt-and-suspenders guard
+  S.cart[sku] = (S.cart[sku]||0) + 1;
+  saveCart(); render();
+}
 function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
 function sendSupport() { S.supportMsg=document.getElementById('support-input')?.value||''; S.supportSent=true; render(); }
 function markDone(id) {
@@ -857,6 +880,37 @@ function bindCheckout() {
   if (sn) sn.addEventListener('input', e=>{ S.spotNote=e.target.value; });
 }
 
+// ─── INVENTORY REFRESH ──────────────────────────────────────────────────────
+// Silently re-fetches the sheet every 3 minutes so inventory stays current
+// without the customer needing to manually refresh the page.
+async function refreshInventory() {
+  try {
+    const r = await fetch(SHEET_CSV + '&t=' + Date.now()); // bust cache
+    const text = await r.text();
+    const rows = parseCSV(text);
+    let changed = false;
+    rows.forEach(row => {
+      const sku = row['SKU'];
+      const p = PRODUCTS.find(x=>x.sku===sku);
+      if (!p) return;
+      const newInv = parseInt(row['Inventory'] || row['inventory'] || '999', 10);
+      const active = (row['Active']||'').trim().toLowerCase();
+      const isActive = active==='yes' || active==='active';
+      if (p.inventory !== newInv || p._active !== isActive) {
+        p.inventory = newInv;
+        p._active = isActive;
+        changed = true;
+      }
+    });
+    // Remove newly inactive products
+    const before = PRODUCTS.length;
+    PRODUCTS = PRODUCTS.filter(p => p._active !== false);
+    if (PRODUCTS.length !== before) changed = true;
+    // Re-render menu quietly if something changed
+    if (changed && (S.view==='menu' || S.view==='cart')) render();
+  } catch(e) { /* fail silently */ }
+}
+
 // ─── BOOT ────────────────────────────────────────────────────────────────────
 (function boot() {
   const params = new URLSearchParams(window.location.search);
@@ -885,6 +939,8 @@ function bindCheckout() {
 
   render();       // show loading or success screen immediately
   loadProducts(); // fetch from Google Sheets
+  // Refresh inventory every 3 minutes silently
+  setInterval(refreshInventory, 3 * 60 * 1000);
 })();
 </script>
 </body>
