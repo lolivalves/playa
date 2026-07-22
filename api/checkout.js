@@ -21,7 +21,7 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   try {
-    const { items, spotNote, pinX, pinY, service_fee, fee_label } = req.body;
+    const { items, spotNote, gpsLat, gpsLng, gpsAcc, passcode, service_fee, fee_label } = req.body;
 
     if (!items || !items.length) {
       return res.status(400).json({ error: 'No items in cart' });
@@ -56,11 +56,14 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // Build metadata so you can see spot info in your Stripe dashboard
+    // Build metadata so you can see order info in your Stripe dashboard
     const metadata = {
-      spot_note: spotNote || 'No note provided',
-      pin_x: String(Math.round(pinX || 0)),
-      pin_y: String(Math.round(pinY || 0)),
+      spot_note:    spotNote  || 'No note provided',
+      passcode:     passcode  || '',
+      gps_lat:      String(gpsLat || ''),
+      gps_lng:      String(gpsLng || ''),
+      gps_accuracy: String(gpsAcc || ''),
+      maps_url:     gpsLat ? `https://www.google.com/maps?q=${gpsLat},${gpsLng}` : '',
       order_source: 'playaplus.app',
     };
 

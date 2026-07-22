@@ -147,6 +147,9 @@ let S = {
   orders: JSON.parse(localStorage.getItem(ORDERS_KEY) || '[]'),
   catFilter: 'All',
   pinPlaced: false, pinX: 55, pinY: 65,
+  gpsLat: null, gpsLng: null, gpsAcc: null,
+  selfieData: null,
+  idMethod: 'selfie',
   spotNote: '',
   orderPlaced: null,
   adminView: 'dashboard',
@@ -468,38 +471,74 @@ function screenCart() {
 }
 
 function screenCheckout() {
-  const pxPx = S.pinX/100*390, pxPy = S.pinY/100*170;
   return `${backHeader('Checkout','cart')}
   <div class="content fade-in" style="padding:14px;padding-bottom:28px">
-    <div class="card">
-      <div class="section-label">📍 Drop your pin on the beach</div>
-      <div id="bmap" style="border-radius:10px;overflow:hidden;cursor:crosshair;position:relative;width:100%;height:170px;user-select:none;
-        background:linear-gradient(180deg,#87ceeb 0%,#4fc3f7 35%,#2ab5a5 50%,#c8a96e 65%,#e8d5b7 100%)">
-        <svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 390 170" preserveAspectRatio="none">
-          <path d="M0 88 Q60 78 110 84 Q170 92 240 80 Q300 70 390 82 L390 170 L0 170Z" fill="#2ab5a5" opacity="0.6"/>
-          <path d="M0 96 Q90 86 150 92 Q210 98 300 86 Q345 82 390 88 L390 170 L0 170Z" fill="#3ecfbf" opacity="0.4"/>
-          <ellipse cx="300" cy="150" rx="60" ry="13" fill="#e8d5b7" opacity="0.5"/>
-          <ellipse cx="65" cy="154" rx="38" ry="10" fill="#e8d5b7" opacity="0.4"/>
-          <text x="10" y="20" font-size="11" fill="#0d2b4e" opacity="0.6">🌊 Ocean</text>
-          <text x="10" y="162" font-size="11" fill="#0d2b4e" opacity="0.6">🏖️ Beach</text>
-        </svg>
-        ${S.pinPlaced
-          ? `<div style="position:absolute;left:${pxPx}px;top:${pxPy-30}px;font-size:30px;transform:translateX(-50%);pointer-events:none;filter:drop-shadow(0 2px 5px rgba(0,0,0,0.35))">📍</div>
-             <div style="position:absolute;left:${pxPx}px;top:${pxPy+4}px;transform:translateX(-50%);background:#0d2b4e;color:#fff;font-size:10px;padding:2px 9px;border-radius:10px;white-space:nowrap;pointer-events:none">Your spot</div>`
-          : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
-               <div style="background:rgba(255,255,255,0.93);border-radius:10px;padding:9px 18px;font-size:13px;font-weight:500;box-shadow:0 2px 10px rgba(0,0,0,0.12)">Tap to drop your pin</div>
-             </div>`}
-      </div>
-      ${S.pinPlaced ? `<div style="font-size:12px;color:var(--green);margin-top:7px;text-align:center;font-weight:600">✓ Pin placed — tap again to adjust</div>` : ''}
-      <div style="margin-top:13px">
-        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Spot note <span style="opacity:0.6">(optional)</span></label>
-        <input id="spot-note" type="text" placeholder="e.g. Red umbrella, near lifeguard tower"
-          value="${S.spotNote}"
-          style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;color:var(--navy);background:var(--cream)">
+
+    <!-- ── STEP 1: GPS LOCATION ── -->
+    <div class="card" id="gps-card">
+      <div class="section-label">📍 Step 1 — Your location</div>
+      <div id="gps-status">
+        <div style="text-align:center;padding:16px 0">
+          <div style="font-size:40px;margin-bottom:10px">📡</div>
+          <div style="font-weight:600;font-size:15px;color:var(--navy);margin-bottom:6px">Share your location</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.5">
+            We'll pinpoint your exact spot on the beach so our team can find you fast.
+          </div>
+          <button onclick="getGPS()" class="btn-primary" style="max-width:220px;padding:12px 20px;font-size:14px">
+            📍 Get my location
+          </button>
+          <div style="font-size:11px;color:var(--muted);margin-top:10px">Your location is only used for this delivery.</div>
+        </div>
       </div>
     </div>
 
-    <div class="card">
+    <!-- ── STEP 2: IDENTIFY YOURSELF ── -->
+    <div class="card" id="id-card" style="display:none">
+      <div class="section-label">🙋 Step 2 — Help us find you</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">
+        Choose one — take a quick selfie or describe where you are so our team spots you instantly.
+      </div>
+
+      <!-- Toggle tabs -->
+      <div style="display:flex;border:1.5px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px">
+        <button id="tab-selfie" onclick="switchIdTab('selfie')"
+          style="flex:1;padding:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;
+          background:var(--navy);color:#fff;transition:all 0.15s">📸 Selfie</button>
+        <button id="tab-desc" onclick="switchIdTab('desc')"
+          style="flex:1;padding:9px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;
+          background:#fff;color:var(--muted);transition:all 0.15s">✍️ Description</button>
+      </div>
+
+      <!-- Selfie panel -->
+      <div id="panel-selfie">
+        <div id="selfie-preview" style="display:none;text-align:center;margin-bottom:10px">
+          <img id="selfie-img" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;border:2px solid var(--teal)">
+          <button onclick="retakeSelfie()" style="margin-top:8px;background:none;border:none;color:var(--teal);font-size:13px;cursor:pointer;font-family:inherit;font-weight:600">↩ Retake selfie</button>
+        </div>
+        <div id="selfie-capture" style="text-align:center">
+          <video id="selfie-video" style="display:none;width:100%;border-radius:10px;max-height:220px;object-fit:cover;background:#000"></video>
+          <canvas id="selfie-canvas" style="display:none"></canvas>
+          <div id="selfie-start" style="background:var(--sand);border-radius:10px;padding:24px;margin-bottom:10px">
+            <div style="font-size:36px;margin-bottom:8px">🤳</div>
+            <div style="font-size:13px;color:var(--muted)">A quick selfie helps our team<br>spot you in seconds</div>
+          </div>
+          <button id="btn-camera" onclick="startCamera()" class="btn-primary" style="max-width:200px;padding:11px;font-size:14px">Open camera</button>
+          <button id="btn-snap" onclick="snapSelfie()" class="btn-primary" style="max-width:200px;padding:11px;font-size:14px;display:none">📸 Take photo</button>
+        </div>
+      </div>
+
+      <!-- Description panel -->
+      <div id="panel-desc" style="display:none">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Describe your spot on the beach</div>
+        <textarea id="spot-desc" rows="3" placeholder="e.g. Red umbrella, blue towel, near the volleyball net, wearing a white hat…"
+          style="width:100%;padding:11px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;resize:none;color:var(--navy);background:var(--cream);font-family:inherit"
+          oninput="S.spotNote=this.value"></textarea>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">The more detail the better — umbrella color, clothing, landmarks nearby.</div>
+      </div>
+    </div>
+
+    <!-- ── ORDER SUMMARY ── -->
+    <div class="card" id="summary-card" style="display:none">
       <div class="section-label">Order summary</div>
       ${Object.entries(S.cart).filter(([,q])=>q>0).map(([sku,qty])=>{
         const p=PRODUCTS.find(x=>x.sku===sku); if(!p) return '';
@@ -516,34 +555,25 @@ function screenCheckout() {
       </div>
     </div>
 
-    <div class="card">
+    <!-- ── PAYMENT ── -->
+    <div class="card" id="pay-card" style="display:none">
       <div class="section-label">💳 Payment</div>
       <div style="display:flex;align-items:center;gap:10px;padding:8px 0;margin-bottom:4px">
-        <div style="display:flex;gap:6px">
-          <span style="font-size:22px">💳</span>
-          <span style="font-size:22px"></span>
-          <span style="font-size:22px">🍎</span>
-          <span style="font-size:22px">🇬</span>
-        </div>
+        <div style="display:flex;gap:6px"><span style="font-size:22px">💳</span><span style="font-size:22px">🍎</span><span style="font-size:22px">🇬</span></div>
         <div style="font-size:12px;color:var(--muted)">Card · Apple Pay · Google Pay</div>
       </div>
       <div style="background:#f0faf9;border:0.5px solid var(--teal);border-radius:9px;padding:10px 13px;font-size:12px;color:#0d6e63;line-height:1.5">
-        🔒 You'll be taken to Stripe's secure checkout page to complete payment. Your card details are never stored on our servers.
+        🔒 You'll be taken to Stripe's secure checkout. Your card details are never stored on our servers.
       </div>
     </div>
 
-    <button class="btn-primary" id="place-btn" onclick="placeOrder()"
-      ${!S.pinPlaced ? 'disabled' : ''} style="position:relative">
-      ${S.pinPlaced
-        ? `<span id="btn-label">Pay $${cartTotal().toFixed(2)} securely →</span>`
-        : 'Drop your pin first'}
+    <button class="btn-primary" id="place-btn" onclick="placeOrder()" disabled
+      style="opacity:0.4;margin-top:4px">
+      <span id="btn-label">Complete your location first</span>
     </button>
-    <div style="text-align:center;margin-top:8px;font-size:11px;color:var(--muted)">
-      Powered by <strong>Stripe</strong> · SSL encrypted
-    </div>
+    <div style="text-align:center;margin-top:8px;font-size:11px;color:var(--muted)">Powered by <strong>Stripe</strong> · SSL encrypted</div>
   </div>`;
 }
-
 function screenTrack() {
   const o = S.orderPlaced;
   if (!o) return `${backHeader('Order tracking','home')}
@@ -663,6 +693,170 @@ function screenSupport() {
   </div>`;
 }
 
+// ─── CHECKOUT HELPERS ────────────────────────────────────────────────────────
+
+// Generate a random 4-digit passcode
+function generatePasscode() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+// GPS — request browser geolocation
+function getGPS() {
+  const status = document.getElementById('gps-status');
+  if (!status) return;
+  status.innerHTML = `<div style="text-align:center;padding:20px 0">
+    <div class="spinner" style="margin:0 auto 12px"></div>
+    <div style="font-size:13px;color:var(--muted)">Getting your location…</div>
+  </div>`;
+
+  if (!navigator.geolocation) {
+    showGPSError('Geolocation is not supported by your browser.');
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      S.gpsLat = pos.coords.latitude;
+      S.gpsLng = pos.coords.longitude;
+      S.gpsAcc = Math.round(pos.coords.accuracy);
+      S.pinPlaced = true;
+
+      // Show success state
+      status.innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;padding:6px 0">
+          <div style="width:40px;height:40px;border-radius:50%;background:#e6f7f5;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">✅</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;color:var(--navy)">Location captured!</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">Accuracy: ±${S.gpsAcc}m · ${S.gpsLat.toFixed(5)}, ${S.gpsLng.toFixed(5)}</div>
+          </div>
+          <button onclick="getGPS()" style="background:none;border:none;color:var(--teal);font-size:12px;cursor:pointer;font-family:inherit;font-weight:600;margin-left:auto;white-space:nowrap">↩ Redo</button>
+        </div>`;
+
+      // Reveal step 2 and below
+      document.getElementById('id-card').style.display = 'block';
+      document.getElementById('id-card').scrollIntoView({behavior:'smooth', block:'start'});
+      checkReadyToOrder();
+    },
+    err => {
+      let msg = 'Could not get your location.';
+      if (err.code === 1) msg = 'Location access denied. Please allow access in your browser settings and try again.';
+      if (err.code === 3) msg = 'Location request timed out. Please try again.';
+      showGPSError(msg);
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+function showGPSError(msg) {
+  const status = document.getElementById('gps-status');
+  if (!status) return;
+  status.innerHTML = `
+    <div style="text-align:center;padding:12px 0">
+      <div style="font-size:32px;margin-bottom:8px">😕</div>
+      <div style="font-size:13px;color:#e53e3e;margin-bottom:12px;line-height:1.5">${msg}</div>
+      <button onclick="getGPS()" class="btn-primary" style="max-width:200px;padding:11px;font-size:14px">Try again</button>
+    </div>`;
+}
+
+// Switch between selfie / description tabs
+function switchIdTab(tab) {
+  const isSelfie = tab === 'selfie';
+  document.getElementById('tab-selfie').style.background = isSelfie ? 'var(--navy)' : '#fff';
+  document.getElementById('tab-selfie').style.color     = isSelfie ? '#fff' : 'var(--muted)';
+  document.getElementById('tab-desc').style.background  = isSelfie ? '#fff' : 'var(--navy)';
+  document.getElementById('tab-desc').style.color       = isSelfie ? 'var(--muted)' : '#fff';
+  document.getElementById('panel-selfie').style.display = isSelfie ? 'block' : 'none';
+  document.getElementById('panel-desc').style.display   = isSelfie ? 'none' : 'block';
+  S.idMethod = tab;
+  checkReadyToOrder();
+}
+
+// Camera / selfie logic
+let _stream = null;
+function startCamera() {
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    .then(stream => {
+      _stream = stream;
+      const video = document.getElementById('selfie-video');
+      const start = document.getElementById('selfie-start');
+      const btnCamera = document.getElementById('btn-camera');
+      const btnSnap   = document.getElementById('btn-snap');
+      video.srcObject = stream;
+      video.play();
+      video.style.display = 'block';
+      start.style.display = 'none';
+      btnCamera.style.display = 'none';
+      btnSnap.style.display = 'inline-block';
+    })
+    .catch(() => {
+      // Camera denied — switch to description
+      switchIdTab('desc');
+      alert('Camera access denied. Please describe your location instead.');
+    });
+}
+
+function snapSelfie() {
+  const video  = document.getElementById('selfie-video');
+  const canvas = document.getElementById('selfie-canvas');
+  const img    = document.getElementById('selfie-img');
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+  S.selfieData = dataUrl;
+
+  // Stop camera stream
+  if (_stream) _stream.getTracks().forEach(t => t.stop());
+  _stream = null;
+
+  img.src = dataUrl;
+  document.getElementById('selfie-preview').style.display = 'block';
+  document.getElementById('selfie-capture').style.display = 'none';
+
+  // Reveal summary + payment
+  document.getElementById('summary-card').style.display = 'block';
+  document.getElementById('pay-card').style.display = 'block';
+  checkReadyToOrder();
+}
+
+function retakeSelfie() {
+  S.selfieData = null;
+  document.getElementById('selfie-preview').style.display = 'none';
+  document.getElementById('selfie-capture').style.display = 'block';
+  document.getElementById('selfie-start').style.display = 'block';
+  document.getElementById('selfie-video').style.display = 'none';
+  document.getElementById('btn-camera').style.display = 'inline-block';
+  document.getElementById('btn-snap').style.display = 'none';
+  checkReadyToOrder();
+}
+
+// Check if all required info is present to enable Pay button
+function checkReadyToOrder() {
+  const btn = document.getElementById('place-btn');
+  const lbl = document.getElementById('btn-label');
+  if (!btn) return;
+
+  const hasGPS     = S.pinPlaced;
+  const hasSelfie  = !!S.selfieData;
+  const hasDesc    = (S.spotNote||'').trim().length > 5;
+  const method     = S.idMethod || 'selfie';
+  const hasId      = method === 'selfie' ? hasSelfie : hasDesc;
+
+  if (!hasGPS) {
+    btn.disabled = true; btn.style.opacity = '0.4';
+    lbl.textContent = 'Complete your location first';
+  } else if (!hasId) {
+    btn.disabled = true; btn.style.opacity = '0.4';
+    lbl.textContent = method === 'selfie' ? 'Take a selfie to continue' : 'Add a description to continue';
+    // Show summary + pay cards now that GPS is done
+    document.getElementById('summary-card').style.display = 'block';
+    document.getElementById('pay-card').style.display = 'block';
+  } else {
+    btn.disabled = false; btn.style.opacity = '1';
+    lbl.textContent = `Pay $${cartTotal().toFixed(2)} securely →`;
+  }
+}
+
 // ─── ADMIN PANEL ─────────────────────────────────────────────────────────────
 function renderAdmin() {
   const orders = S.orders;
@@ -734,6 +928,9 @@ function renderAdmin() {
 }
 
 function adminCard(o) {
+  const mapsUrl = o.gpsLat
+    ? `https://www.google.com/maps?q=${o.gpsLat},${o.gpsLng}`
+    : null;
   return `<div class="card" style="margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
       <div style="font-weight:700;font-size:14px">Order #${o.id}</div>
@@ -745,9 +942,40 @@ function adminCard(o) {
           : ''}
       </div>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${o.date} · <strong style="color:var(--navy)">$${o.total.toFixed(2)}</strong></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${o.date} · <strong style="color:var(--navy)">$${o.total.toFixed(2)}</strong></div>
+
+    <!-- Items -->
     ${o.items.map(it=>`<div style="font-size:12px;color:var(--muted)">${it.emoji} ${it.name} ×${it.qty}</div>`).join('')}
-    ${o.note ? `<div style="margin-top:7px;font-size:11px;background:#e6f7f5;padding:5px 10px;border-radius:7px;color:#0d6e63;font-weight:500">📍 ${o.note}</div>` : ''}
+
+    <!-- Passcode -->
+    ${o.passcode ? `
+    <div style="margin-top:10px;background:var(--navy);border-radius:9px;padding:9px 12px;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:11px;color:var(--teal2);font-weight:600">🔑 Passcode</div>
+      <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:6px">${o.passcode}</div>
+    </div>` : ''}
+
+    <!-- GPS link -->
+    ${mapsUrl ? `
+    <a href="${mapsUrl}" target="_blank"
+      style="margin-top:8px;display:flex;align-items:center;gap:7px;background:#e6f7f5;border-radius:9px;padding:8px 11px;text-decoration:none">
+      <span style="font-size:16px">📡</span>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:600;color:#0d6e63">Open in Google Maps</div>
+        <div style="font-size:10px;color:#0d6e63;opacity:0.75">±${o.gpsAcc}m accuracy · ${Number(o.gpsLat).toFixed(4)}, ${Number(o.gpsLng).toFixed(4)}</div>
+      </div>
+      <span style="color:#0d6e63;font-size:16px">↗</span>
+    </a>` : ''}
+
+    <!-- Selfie -->
+    ${o.selfie ? `
+    <div style="margin-top:8px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600">📸 Customer selfie</div>
+      <img src="${o.selfie}" style="width:100%;border-radius:9px;max-height:160px;object-fit:cover;border:2px solid var(--teal)">
+    </div>` : ''}
+
+    <!-- Description note -->
+    ${o.note && !o.selfie ? `<div style="margin-top:8px;font-size:11px;background:#fff8e6;padding:7px 10px;border-radius:8px;color:#b45309;font-weight:500">✍️ ${o.note}</div>` : ''}
+    ${o.note && o.selfie  ? `<div style="margin-top:6px;font-size:11px;background:#f5f5f5;padding:6px 10px;border-radius:8px;color:var(--muted)">📝 ${o.note}</div>` : ''}
   </div>`;
 }
 
@@ -774,19 +1002,20 @@ function markDone(id) {
 async function placeOrder() {
   if (!S.pinPlaced) return;
 
-  const note = document.getElementById('spot-note')?.value || S.spotNote;
+  // Generate delivery passcode
+  const passcode = generatePasscode();
+
+  const note = S.spotNote || document.getElementById('spot-desc')?.value || '';
   const items = Object.entries(S.cart).filter(([,q])=>q>0).map(([sku,qty])=>{
     const p = PRODUCTS.find(x=>x.sku===sku);
     return { name:p.name, emoji:p.emoji, desc:p.desc||'', qty, price:p.price };
   });
 
-  // Show loading on button
   const btn = document.getElementById('place-btn');
   const lbl = document.getElementById('btn-label');
   if (btn) btn.disabled = true;
   if (lbl) lbl.innerHTML = '⏳ Redirecting to payment…';
 
-  // Save pending order so we can confirm it after Stripe redirects back
   const pendingOrder = {
     id: 1000 + S.orders.length,
     date: new Date().toLocaleDateString(),
@@ -796,7 +1025,13 @@ async function placeOrder() {
     service_fee: CONFIG.service_fee,
     fee_label: CONFIG.fee_label,
     items,
-    note
+    note,
+    passcode,
+    gpsLat: S.gpsLat,
+    gpsLng: S.gpsLng,
+    gpsAcc: S.gpsAcc,
+    selfie: S.selfieData || null,
+    idMethod: S.idMethod || 'selfie',
   };
   localStorage.setItem('playa_pending_order', JSON.stringify(pendingOrder));
 
@@ -804,11 +1039,20 @@ async function placeOrder() {
     const response = await fetch('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items, spotNote: note, pinX: S.pinX, pinY: S.pinY, service_fee: CONFIG.service_fee, fee_label: CONFIG.fee_label }),
+      body: JSON.stringify({
+        items,
+        spotNote: note,
+        gpsLat: S.gpsLat,
+        gpsLng: S.gpsLng,
+        gpsAcc: S.gpsAcc,
+        passcode,
+        service_fee: CONFIG.service_fee,
+        fee_label: CONFIG.fee_label
+      }),
     });
     const data = await response.json();
     if (data.url) {
-      window.location.href = data.url; // → Stripe hosted checkout page
+      window.location.href = data.url;
     } else {
       throw new Error(data.error || 'Payment failed');
     }
@@ -823,15 +1067,26 @@ async function placeOrder() {
 // ─── SUCCESS SCREEN (returned from Stripe) ───────────────────────────────────
 function screenSuccess() {
   const o = S.orderPlaced;
-  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:32px;text-align:center;background:var(--cream)">
-    <div style="font-size:72px;margin-bottom:8px">🎉</div>
-    <div style="font-size:24px;font-weight:800;color:var(--navy);margin-bottom:8px">Order confirmed!</div>
-    <div style="font-size:14px;color:var(--muted);margin-bottom:28px;line-height:1.5">
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:24px;text-align:center;background:var(--cream)">
+    <div style="font-size:64px;margin-bottom:8px">🎉</div>
+    <div style="font-size:22px;font-weight:800;color:var(--navy);margin-bottom:6px">Order confirmed!</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5">
       Payment received. Your order is being prepared<br>and will be at your spot shortly.
     </div>
+
+    ${o?.passcode ? `
+    <!-- PASSCODE — most prominent element -->
+    <div style="background:var(--navy);border-radius:16px;padding:20px 24px;width:100%;max-width:320px;margin-bottom:16px;text-align:center">
+      <div style="font-size:11px;font-weight:600;color:var(--teal2);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">🔑 Your delivery passcode</div>
+      <div style="font-size:52px;font-weight:800;color:#fff;letter-spacing:12px;font-variant-numeric:tabular-nums">${o.passcode}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:8px;line-height:1.5">
+        Share this code with your Playa+ delivery person<br>to confirm your order. Do not share with others.
+      </div>
+    </div>` : ''}
+
     ${o ? `
-    <div style="background:#fff;border:0.5px solid var(--border);border-radius:14px;padding:18px;width:100%;max-width:320px;margin-bottom:24px;text-align:left">
-      <div style="font-size:11px;font-weight:600;color:var(--teal);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Your order #${o.id}</div>
+    <div style="background:#fff;border:0.5px solid var(--border);border-radius:14px;padding:16px;width:100%;max-width:320px;margin-bottom:16px;text-align:left">
+      <div style="font-size:11px;font-weight:600;color:var(--teal);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Order #${o.id}</div>
       ${o.items.map(it=>`<div style="font-size:13px;color:var(--muted);padding:3px 0">${it.emoji} ${it.name} ×${it.qty}</div>`).join('')}
       <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:8px">
         ${o.subtotal ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:3px"><span>Subtotal</span><span>$${o.subtotal.toFixed(2)}</span></div>` : ''}
@@ -839,7 +1094,9 @@ function screenSuccess() {
         <div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;color:var(--navy)"><span>Total paid</span><span>$${o.total.toFixed(2)}</span></div>
       </div>
       ${o.note ? `<div style="margin-top:8px;font-size:12px;background:#e6f7f5;padding:6px 10px;border-radius:8px;color:#0d6e63">📍 ${o.note}</div>` : ''}
+      ${o.gpsLat ? `<div style="margin-top:6px;font-size:11px;color:var(--muted)">📡 GPS: ${o.gpsLat.toFixed(5)}, ${o.gpsLng.toFixed(5)} ±${o.gpsAcc}m</div>` : ''}
     </div>` : ''}
+
     <button class="btn-primary" style="max-width:280px" onclick="nav('track')">Track my order →</button>
     <button onclick="nav('home')" style="margin-top:12px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Back to home</button>
   </div>`;
@@ -926,6 +1183,9 @@ async function refreshInventory() {
       localStorage.removeItem('playa_pending_order');
       localStorage.removeItem(CART_KEY);
       localStorage.removeItem(VIEW_KEY);
+      // Reset checkout state
+      S.pinPlaced=false; S.gpsLat=null; S.gpsLng=null; S.gpsAcc=null;
+      S.selfieData=null; S.spotNote=''; S.idMethod='selfie';
     }
     S.view = 'success';
     // Clean the URL so refreshing doesn't re-trigger this
