@@ -21,7 +21,7 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   try {
-    const { items, spotNote, gpsLat, gpsLng, gpsAcc, passcode, service_fee, fee_label } = req.body;
+    const { items, spotNote, gpsLat, gpsLng, gpsAcc, passcode, service_fee, fee_label, delivery_fee, delivery_label } = req.body;
 
     if (!items || !items.length) {
       return res.status(400).json({ error: 'No items in cart' });
@@ -39,6 +39,22 @@ module.exports = async function handler(req, res) {
       },
       quantity: item.qty,
     }));
+
+    // Add delivery fee as a Stripe line item (only if > 0)
+    const dFee = parseFloat(delivery_fee) || 0;
+    if (dFee > 0) {
+      lineItems.push({
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: delivery_label || 'Delivery',
+            description: 'Beach delivery fee',
+          },
+          unit_amount: Math.round(dFee * 100),
+        },
+        quantity: 1,
+      });
+    }
 
     // Add service fee as a Stripe line item (only if > 0)
     const fee = parseFloat(service_fee) || 0;
