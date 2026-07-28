@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="theme-color" content="#0d2b4e"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-title" content="Playa+ Ops"/>
+  <title>Playa+ Operator Panel</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:   #0d2b4e;
+      --teal:   #2ab5a5;
+      --teal2:  #3ecfbf;
+      --orange: #f47c3c;
+      --sun:    #f5a623;
+      --cream:  #faf6f1;
+      --white:  #ffffff;
+      --border: rgba(0,0,0,0.09);
+      --muted:  #718096;
+      --green:  #22c55e;
+      --red:    #e53e3e;
+    }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a2e45; color: var(--navy); -webkit-font-smoothing: antialiased; }
+    #app { max-width: 480px; min-height: 100dvh; margin: 0 auto; background: var(--cream); position: relative; box-shadow: 0 0 40px rgba(0,0,0,0.3); }
+    button { font-family: inherit; cursor: pointer; }
+    input { font-family: inherit; outline: none; }
+    ::-webkit-scrollbar { width: 0; }
+    .card { background: var(--white); border: 0.5px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 10px; }
+    .section-label { font-size: 11px; font-weight: 600; color: var(--teal); letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 10px; }
+    .badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+    .badge-new       { background: #fff8e6; color: #b45309; }
+    .badge-claimed   { background: #e0f2fe; color: #0369a1; }
+    .badge-delivered { background: #e6f7f5; color: #0d6e63; }
+    .btn { border: none; border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 600; font-family: inherit; transition: opacity 0.15s; }
+    .btn:active { opacity: 0.8; }
+    .btn-primary  { background: var(--orange); color: #fff; }
+    .btn-navy     { background: var(--navy);   color: #fff; }
+    .btn-teal     { background: var(--teal);   color: #fff; }
+    .btn-outline  { background: transparent; border: 1.5px solid var(--border); color: var(--navy); }
+    .btn-danger   { background: var(--red);    color: #fff; }
+    .btn-full     { width: 100%; padding: 13px; font-size: 15px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { width: 32px; height: 32px; border: 3px solid rgba(42,181,165,0.2); border-top-color: var(--teal); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .pulse { animation: pulse 1.5s infinite; }
+    @keyframes slideIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+    .slide-in { animation: slideIn 0.2s ease both; }
+    .pin-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--border); transition: background 0.15s; }
+    .pin-dot.filled { background: var(--navy); }
+    .tab-btn { flex: 1; padding: 10px 4px; border: none; background: transparent; font-size: 12px; font-weight: 400; color: var(--muted); border-bottom: 2px solid transparent; font-family: inherit; transition: all 0.15s; }
+    .tab-btn.active { font-weight: 700; color: var(--navy); border-bottom-color: var(--orange); }
+    .order-card { background: var(--white); border: 0.5px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+    .order-card.mine { border-left: 3px solid var(--teal); }
+    .order-card.new-order { border-left: 3px solid var(--sun); }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const SUPA_URL  = 'https://gjrmdmyxkisrjhuzrhmg.supabase.co';
+const SUPA_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
+const HEADERS   = { 'Content-Type':'application/json', 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` };
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let ST = {
+  view: 'login',   // login | panel
+  operator: null,  // logged-in operator object
+  operators: [],   // all operators (admin only)
+  orders: [],
+  tab: 'new',      // new | mine | all | dashboard
+  pin: '',
+  pinError: '',
+  loading: false,
+  realtimeSub: null,
+};
+
+// ─── SUPABASE HELPERS ────────────────────────────────────────────────────────
+async function sbGet(table, params='') {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, { headers: { ...HEADERS, 'Prefer': 'return=representation' } });
+  return r.json();
+}
+async function sbPatch(table, match, body) {
+  const params = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&');
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, {
+    method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=representation' }, body: JSON.stringify(body)
+  });
+  return r.json();
+}
+async function sbPost(table, body) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
+    method: 'POST', headers: { ...HEADERS, 'Prefer': 'return=representation' }, body: JSON.stringify(body)
+  });
+  return r.json();
+}
+async function sbDelete(table, match) {
+  const params = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join('&');
+  await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, { method: 'DELETE', headers: HEADERS });
+}
+
+// ─── REALTIME ────────────────────────────────────────────────────────────────
+function subscribeOrders() {
+  // Use Supabase Realtime via long-poll fallback (works without WebSocket config)
+  // Poll every 8 seconds for new/updated orders
+  if (ST.realtimeSub) clearInterval(ST.realtimeSub);
+  ST.realtimeSub = setInterval(async () => {
+    const fresh = await fetchOrders();
+    const changed = JSON.stringify(fresh) !== JSON.stringify(ST.orders);
+    if (changed) { ST.orders = fresh; renderPanel(); }
+  }, 8000);
+}
+
+// ─── DATA ────────────────────────────────────────────────────────────────────
+async function fetchOrders() {
+  try {
+    return await sbGet('orders', 'order=created_at.desc&limit=200');
+  } catch(e) { return ST.orders; }
+}
+
+async function fetchOperators() {
+  try { return await sbGet('operators', 'order=name.asc'); }
+  catch(e) { return []; }
+}
+
+// ─── AUTH ────────────────────────────────────────────────────────────────────
+async function tryLogin(pin) {
+  ST.loading = true; render();
+  try {
+    const ops = await sbGet('operators', `pin=eq.${pin}&active=eq.true`);
+    if (ops && ops.length > 0) {
+      ST.operator = ops[0];
+      ST.pin = '';
+      ST.pinError = '';
+      ST.orders = await fetchOrders();
+      if (ST.operator.role === 'admin') ST.operators = await fetchOperators();
+      ST.view = 'panel';
+      ST.tab = 'new';
+      subscribeOrders();
+    } else {
+      ST.pinError = 'Incorrect PIN. Try again.';
+      ST.pin = '';
+    }
+  } catch(e) {
+    ST.pinError = 'Connection error. Check your internet.';
+  }
+  ST.loading = false; render();
+}
+
+function logout() {
+  if (ST.realtimeSub) clearInterval(ST.realtimeSub);
+  ST.operator = null; ST.orders = []; ST.operators = [];
+  ST.view = 'login'; ST.pin = ''; ST.pinError = '';
+  render();
+}
+
+// ─── ORDER ACTIONS ───────────────────────────────────────────────────────────
+async function claimOrder(orderId) {
+  await sbPatch('orders', { id: orderId }, {
+    status: 'claimed',
+    claimed_by: ST.operator.id,
+    claimed_at: new Date().toISOString()
+  });
+  ST.orders = await fetchOrders();
+  render();
+}
+
+async function unclaimOrder(orderId) {
+  await sbPatch('orders', { id: orderId }, {
+    status: 'new', claimed_by: null, claimed_at: null
+  });
+  ST.orders = await fetchOrders();
+  render();
+}
+
+async function deliverOrder(orderId) {
+  await sbPatch('orders', { id: orderId }, {
+    status: 'delivered',
+    delivered_at: new Date().toISOString()
+  });
+  ST.orders = await fetchOrders();
+  render();
+}
+
+async function assignOrder(orderId, operatorId) {
+  await sbPatch('orders', { id: orderId }, {
+    status: operatorId ? 'claimed' : 'new',
+    claimed_by: operatorId || null,
+    claimed_at: operatorId ? new Date().toISOString() : null
+  });
+  ST.orders = await fetchOrders();
+  render();
+}
+
+// ─── SVG ─────────────────────────────────────────────────────────────────────
+function towerSVG(s=36) {
+  return `<svg width="${s}" height="${s}" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="42" cy="46" r="34" fill="#f5a623"/>
+    <path d="M10 80 Q30 68 50 72 Q70 76 100 68 Q115 82 120 90 L0 90Z" fill="#2ab5a5" opacity="0.7"/>
+    <rect x="46" y="32" width="32" height="24" rx="2" fill="#0d2b4e"/>
+    <rect x="50" y="36" width="8" height="8" rx="1" fill="#fff" opacity="0.9"/>
+    <rect x="62" y="36" width="8" height="8" rx="1" fill="#fff" opacity="0.9"/>
+    <rect x="44" y="54" width="36" height="3" rx="1" fill="#0d2b4e"/>
+    <rect x="42" y="56" width="4" height="22" rx="1" fill="#0d2b4e"/>
+    <rect x="74" y="56" width="4" height="22" rx="1" fill="#0d2b4e"/>
+    <line x1="46" y1="58" x2="60" y2="78" stroke="#0d2b4e" stroke-width="2"/>
+    <line x1="74" y1="58" x2="60" y2="78" stroke="#0d2b4e" stroke-width="2"/>
+    <rect x="57" y="20" width="2" height="12" rx="1" fill="#0d2b4e"/>
+    <path d="M59 21 L67 24 L59 28Z" fill="#0d2b4e"/>
+    <ellipse cx="25" cy="86" rx="18" ry="5" fill="#e8d5b7" opacity="0.6"/>
+    <ellipse cx="90" cy="82" rx="14" ry="4" fill="#e8d5b7" opacity="0.5"/>
+  </svg>`;
+}
+
+// ─── SCREENS ─────────────────────────────────────────────────────────────────
+function screenLogin() {
+  const dots = [0,1,2,3].map(i =>
+    `<div class="pin-dot ${i < ST.pin.length ? 'filled' : ''}"></div>`
+  ).join('');
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:32px;background:var(--navy)">
+      <div style="margin-bottom:20px">${towerSVG(72)}</div>
+      <div style="color:#fff;font-size:22px;font-weight:800;margin-bottom:4px">playa<span style="color:#f47c3c">+</span></div>
+      <div style="color:rgba(255,255,255,0.5);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:36px">Operator Panel</div>
+
+      ${ST.pinError ? `<div style="background:rgba(229,62,62,0.15);border:1px solid rgba(229,62,62,0.4);border-radius:10px;padding:9px 18px;color:#fc8181;font-size:13px;margin-bottom:20px;text-align:center">${ST.pinError}</div>` : ''}
+
+      <div style="color:rgba(255,255,255,0.6);font-size:13px;margin-bottom:20px">Enter your PIN</div>
+
+      <div style="display:flex;gap:16px;margin-bottom:32px">
+        ${dots}
+      </div>
+
+      ${ST.loading ? `<div class="spinner" style="border-top-color:#f47c3c"></div>` : `
+      <div style="display:grid;grid-template-columns:repeat(3,72px);gap:12px">
+        ${keys.map(k => k === '' ? `<div></div>` : `
+          <button onclick="pinKey('${k}')"
+            style="width:72px;height:72px;border-radius:50%;border:none;font-size:${k==='⌫'?'20px':'22px'};font-weight:600;
+            background:${k==='⌫'?'rgba(255,255,255,0.08)':'rgba(255,255,255,0.12)'};
+            color:#fff;transition:background 0.1s;"
+            onmousedown="this.style.background='rgba(255,255,255,0.25)'"
+            onmouseup="this.style.background='${k==='⌫'?'rgba(255,255,255,0.08)':'rgba(255,255,255,0.12)'}'">${k}</button>
+        `).join('')}
+      </div>`}
+    </div>`;
+}
+
+function screenPanel() {
+  const op = ST.operator;
+  const isAdmin = op.role === 'admin';
+  const tabs = isAdmin
+    ? [{id:'new',label:'🔔 New'},{id:'mine',label:'📦 Mine'},{id:'all',label:'📋 All'},{id:'dashboard',label:'📊 Stats'}]
+    : [{id:'new',label:'🔔 New'},{id:'mine',label:'📦 Mine'},{id:'all',label:'📋 All'}];
+
+  const newCount   = ST.orders.filter(o=>o.status==='new').length;
+  const mineCount  = ST.orders.filter(o=>o.claimed_by===op.id && o.status==='claimed').length;
+
+  return `
+    <!-- HEADER -->
+    <div style="background:var(--navy);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50">
+      <div style="display:flex;align-items:center;gap:8px">
+        ${towerSVG(32)}
+        <div>
+          <span style="color:#fff;font-size:14px;font-weight:700">playa<span style="color:#f47c3c">+</span></span>
+          <div style="color:var(--teal2);font-size:9px;letter-spacing:1.5px">OPERATOR</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="text-align:right">
+          <div style="color:#fff;font-size:13px;font-weight:600">${op.name}</div>
+          <div style="color:rgba(255,255,255,0.5);font-size:10px;text-transform:uppercase;letter-spacing:1px">${op.role}</div>
+        </div>
+        <button onclick="logout()" style="background:rgba(255,255,255,0.1);border:none;border-radius:8px;padding:6px 10px;color:rgba(255,255,255,0.7);font-size:12px">Exit</button>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div style="display:flex;background:#fff;border-bottom:0.5px solid var(--border);position:sticky;top:56px;z-index:40">
+      ${tabs.map(t=>`
+        <button class="tab-btn ${ST.tab===t.id?'active':''}" onclick="setTab('${t.id}')">
+          ${t.label}${t.id==='new'&&newCount>0?` <span style="background:#e53e3e;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:2px">${newCount}</span>`:''}
+          ${t.id==='mine'&&mineCount>0?` <span style="background:var(--teal);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:2px">${mineCount}</span>`:''}
+        </button>`).join('')}
+    </div>
+
+    <!-- CONTENT -->
+    <div style="padding:12px;padding-bottom:32px;min-height:calc(100dvh - 112px)">
+      ${ST.tab==='new'       ? renderNew()       : ''}
+      ${ST.tab==='mine'      ? renderMine()      : ''}
+      ${ST.tab==='all'       ? renderAll()       : ''}
+      ${ST.tab==='dashboard' ? renderDashboard() : ''}
+    </div>`;
+}
+
+// ── NEW ORDERS (unclaimed) ────────────────────────────────────────────────────
+function renderNew() {
+  const orders = ST.orders.filter(o=>o.status==='new');
+  if (!orders.length) return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center;color:var(--muted)">
+      <div style="font-size:48px;margin-bottom:12px">✅</div>
+      <div style="font-weight:600;color:var(--navy);font-size:16px">All clear!</div>
+      <div style="font-size:13px;margin-top:6px">No new orders waiting.</div>
+    </div>`;
+  return `
+    <div style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">
+      ${orders.length} order${orders.length>1?'s':''} waiting
+      <span class="pulse" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#e53e3e;margin-left:6px;vertical-align:middle"></span>
+    </div>
+    ${orders.map(o=>orderCard(o,'new')).join('')}`;
+}
+
+// ── MY ORDERS (claimed by me) ────────────────────────────────────────────────
+function renderMine() {
+  const orders = ST.orders.filter(o=>o.claimed_by===ST.operator.id && o.status==='claimed');
+  if (!orders.length) return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center;color:var(--muted)">
+      <div style="font-size:48px;margin-bottom:12px">📭</div>
+      <div style="font-weight:600;color:var(--navy)">Nothing claimed yet</div>
+      <div style="font-size:13px;margin-top:6px">Grab an order from the New tab.</div>
+    </div>`;
+  return `
+    <div style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">Your active orders</div>
+    ${orders.map(o=>orderCard(o,'mine')).join('')}`;
+}
+
+// ── ALL ORDERS ───────────────────────────────────────────────────────────────
+function renderAll() {
+  const orders = ST.orders;
+  if (!orders.length) return `<div style="padding:60px;text-align:center;color:var(--muted);font-size:14px">No orders yet today.</div>`;
+  const grouped = {
+    new: orders.filter(o=>o.status==='new'),
+    claimed: orders.filter(o=>o.status==='claimed'),
+    delivered: orders.filter(o=>o.status==='delivered'),
+  };
+  return Object.entries(grouped).filter(([,v])=>v.length>0).map(([status,list])=>`
+    <div style="font-size:11px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin:12px 0 8px">${status} (${list.length})</div>
+    ${list.map(o=>orderCard(o,'all')).join('')}`).join('');
+}
+
+// ── ORDER CARD ───────────────────────────────────────────────────────────────
+function orderCard(o, context) {
+  const isAdmin   = ST.operator.role === 'admin';
+  const isMine    = o.claimed_by === ST.operator.id;
+  const claimedOp = ST.operators.find(x=>x.id===o.claimed_by);
+  const mapsUrl   = o.gps_lat ? `https://www.google.com/maps?q=${o.gps_lat},${o.gps_lng}` : null;
+  const items     = Array.isArray(o.items) ? o.items : (typeof o.items==='string'?JSON.parse(o.items):[]);
+  const age       = Math.round((Date.now()-new Date(o.created_at))/60000);
+
+  return `
+  <div class="order-card ${context==='mine'?'mine':context==='new'?'new-order':''} slide-in">
+
+    <!-- TOP ROW -->
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+      <div>
+        <span style="font-weight:700;font-size:15px">Order #${o.order_number}</span>
+        <span style="font-size:11px;color:var(--muted);margin-left:8px">${age}m ago</span>
+      </div>
+      <span class="badge badge-${o.status}">${o.status}</span>
+    </div>
+
+    <!-- ITEMS -->
+    <div style="margin-bottom:10px">
+      ${items.map(it=>`<div style="font-size:12px;color:var(--muted);padding:2px 0">${it.emoji||'🏖️'} ${it.name} ×${it.qty}</div>`).join('')}
+      <div style="font-weight:700;font-size:14px;color:var(--navy);margin-top:6px">$${Number(o.total||0).toFixed(2)}</div>
+    </div>
+
+    <!-- PASSCODE -->
+    ${o.passcode ? `
+    <div style="background:var(--navy);border-radius:9px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:11px;color:var(--teal2);font-weight:600">🔑 Passcode</span>
+      <span style="font-size:24px;font-weight:800;color:#fff;letter-spacing:8px">${o.passcode}</span>
+    </div>` : ''}
+
+    <!-- GPS -->
+    ${mapsUrl ? `
+    <a href="${mapsUrl}" target="_blank" style="display:flex;align-items:center;gap:8px;background:#e6f7f5;border-radius:9px;padding:8px 11px;text-decoration:none;margin-bottom:8px">
+      <span style="font-size:16px">📡</span>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:600;color:#0d6e63">Open in Google Maps</div>
+        <div style="font-size:10px;color:#0d6e63;opacity:0.75">±${o.gps_acc}m · ${Number(o.gps_lat).toFixed(4)}, ${Number(o.gps_lng).toFixed(4)}</div>
+      </div>
+      <span style="color:#0d6e63">↗</span>
+    </a>` : ''}
+
+    <!-- SELFIE -->
+    ${o.selfie_url ? `
+    <div style="margin-bottom:8px">
+      <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px">📸 Customer</div>
+      <img src="${o.selfie_url}" style="width:100%;border-radius:9px;max-height:140px;object-fit:cover;border:2px solid var(--teal)">
+    </div>` : ''}
+
+    <!-- SPOT NOTE -->
+    ${o.spot_note ? `<div style="font-size:11px;background:#fff8e6;padding:6px 10px;border-radius:8px;color:#b45309;font-weight:500;margin-bottom:8px">✍️ ${o.spot_note}</div>` : ''}
+
+    <!-- CLAIMED BY (admin view) -->
+    ${o.status==='claimed' && claimedOp ? `
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+      📦 Claimed by <strong style="color:var(--navy)">${claimedOp.name}</strong>
+    </div>` : ''}
+
+    <!-- ACTIONS -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${o.status==='new' ? `
+        <button class="btn btn-teal" onclick="claimOrder('${o.id}')">✋ Claim this order</button>
+        ${isAdmin ? adminAssignDropdown(o) : ''}
+      ` : ''}
+      ${o.status==='claimed' && isMine ? `
+        <button class="btn btn-primary" onclick="deliverOrder('${o.id}')">✅ Mark delivered</button>
+        <button class="btn btn-outline" onclick="unclaimOrder('${o.id}')">↩ Unclaim</button>
+      ` : ''}
+      ${o.status==='claimed' && isAdmin && !isMine ? `
+        <button class="btn btn-primary" onclick="deliverOrder('${o.id}')">✅ Mark delivered</button>
+        <button class="btn btn-outline" onclick="unclaimOrder('${o.id}')">↩ Unclaim</button>
+        ${adminAssignDropdown(o)}
+      ` : ''}
+    </div>
+  </div>`;
+}
+
+function adminAssignDropdown(o) {
+  const ops = ST.operators.filter(x=>x.active && x.id !== o.claimed_by);
+  if (!ops.length) return '';
+  return `
+    <select onchange="assignOrder('${o.id}', this.value); this.value=''"
+      style="padding:8px 10px;border-radius:9px;border:0.5px solid var(--border);font-size:12px;font-family:inherit;background:#fff;color:var(--navy);cursor:pointer">
+      <option value="">👤 Assign to…</option>
+      ${ops.map(op=>`<option value="${op.id}">${op.name}</option>`).join('')}
+      ${o.claimed_by ? `<option value="">— Unassign</option>` : ''}
+    </select>`;
+}
+
+// ── DASHBOARD (admin only) ────────────────────────────────────────────────────
+function renderDashboard() {
+  const orders    = ST.orders;
+  const delivered = orders.filter(o=>o.status==='delivered');
+  const claimed   = orders.filter(o=>o.status==='claimed');
+  const newOrders = orders.filter(o=>o.status==='new');
+  const revenue   = delivered.reduce((s,o)=>s+Number(o.total||0), 0);
+
+  // Per-operator stats
+  const opStats = ST.operators.map(op => {
+    const myDelivered = delivered.filter(o=>o.claimed_by===op.id).length;
+    const myClaimed   = claimed.filter(o=>o.claimed_by===op.id).length;
+    return { ...op, delivered: myDelivered, active: myClaimed };
+  }).filter(op=>op.role==='operator');
+
+  // Top items
+  const ic = {};
+  delivered.forEach(o=>(Array.isArray(o.items)?o.items:[]).forEach(it=>{ic[it.name]=(ic[it.name]||0)+it.qty;}));
+  const topItems = Object.entries(ic).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  return `
+    <!-- KPI GRID -->
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px">
+      ${[
+        [`$${revenue.toFixed(2)}`,'Revenue','💰','var(--teal)'],
+        [orders.length,'Total orders','📦','var(--navy)'],
+        [delivered.length,'Delivered','✅','var(--green)'],
+        [newOrders.length,'Waiting','⏳','var(--orange)'],
+      ].map(([v,l,i,c])=>`
+        <div class="card" style="margin-bottom:0;text-align:center;padding:14px 10px">
+          <div style="font-size:20px;margin-bottom:2px">${i}</div>
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">${l}</div>
+          <div style="font-size:20px;font-weight:800;color:${c};margin-top:2px">${v}</div>
+        </div>`).join('')}
+    </div>
+
+    <!-- OPERATOR PERFORMANCE -->
+    <div class="section-label" style="margin-bottom:8px">Team performance</div>
+    ${opStats.length ? opStats.map(op=>`
+      <div class="card" style="display:flex;align-items:center;gap:12px;padding:12px;margin-bottom:8px">
+        <div style="width:38px;height:38px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0">${op.name[0]}</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:14px">${op.name}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${op.delivered} delivered · ${op.active} active</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:18px;font-weight:800;color:var(--teal)">${op.delivered}</div>
+          <div style="font-size:10px;color:var(--muted)">orders</div>
+        </div>
+      </div>`).join('')
+    : `<div style="color:var(--muted);font-size:13px;padding:12px 0">No operator data yet.</div>`}
+
+    <!-- TOP ITEMS -->
+    <div class="section-label" style="margin:14px 0 8px">Best sellers</div>
+    ${topItems.length ? topItems.map(([name,qty],i)=>`
+      <div class="card" style="display:flex;align-items:center;gap:10px;padding:10px 13px;margin-bottom:7px">
+        <span style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;
+          background:${i===0?'#f5a623':i===1?'#a8a8a8':'#cd7f32'}">${i+1}</span>
+        <span style="flex:1;font-size:13px;font-weight:500">${name}</span>
+        <span style="background:#e6f7f5;color:#0d6e63;font-weight:700;font-size:12px;padding:3px 10px;border-radius:20px">${qty} sold</span>
+      </div>`).join('')
+    : `<div style="color:var(--muted);font-size:13px;padding:12px 0">No sales data yet.</div>`}
+
+    <!-- MANAGE OPERATORS (admin only) -->
+    <div class="section-label" style="margin:16px 0 8px">Manage operators</div>
+    ${ST.operators.map(op=>`
+      <div class="card" style="display:flex;align-items:center;gap:10px;padding:11px 13px;margin-bottom:7px">
+        <div style="width:34px;height:34px;border-radius:50%;background:${op.role==='admin'?'var(--orange)':'var(--navy)'};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;flex-shrink:0">${op.name[0]}</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${op.name}</div>
+          <div style="font-size:11px;color:var(--muted)">PIN: ${op.pin} · ${op.role}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          ${op.id!==ST.operator.id ? `
+            <button class="btn ${op.active?'btn-outline':'btn-teal'}" style="padding:5px 10px;font-size:11px"
+              onclick="toggleOperator('${op.id}',${!op.active})">${op.active?'Disable':'Enable'}</button>
+          ` : `<span style="font-size:11px;color:var(--teal);font-weight:600">You</span>`}
+        </div>
+      </div>`).join('')}
+
+    <button class="btn btn-navy btn-full" style="margin-top:8px" onclick="showAddOperator()">+ Add operator</button>
+
+    <div id="add-op-form" style="display:none;margin-top:10px">
+      <div class="card">
+        <div class="section-label">New operator</div>
+        <input id="new-op-name" placeholder="Name" style="width:100%;padding:10px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;margin-bottom:8px;color:var(--navy)">
+        <input id="new-op-pin" placeholder="4-digit PIN" maxlength="4" type="number" style="width:100%;padding:10px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;margin-bottom:8px;color:var(--navy)">
+        <select id="new-op-role" style="width:100%;padding:10px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;margin-bottom:10px;font-family:inherit;color:var(--navy)">
+          <option value="operator">Operator</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button class="btn btn-teal btn-full" onclick="addOperator()">Add operator</button>
+      </div>
+    </div>`;
+}
+
+// ─── ACTIONS ─────────────────────────────────────────────────────────────────
+function pinKey(k) {
+  if (k === '⌫') { ST.pin = ST.pin.slice(0,-1); ST.pinError = ''; render(); return; }
+  if (ST.pin.length >= 4) return;
+  ST.pin += k;
+  render();
+  if (ST.pin.length === 4) setTimeout(()=>tryLogin(ST.pin), 150);
+}
+
+function setTab(t) { ST.tab = t; render(); }
+
+function showAddOperator() {
+  const f = document.getElementById('add-op-form');
+  if (f) f.style.display = f.style.display==='none' ? 'block' : 'none';
+}
+
+async function addOperator() {
+  const name = document.getElementById('new-op-name')?.value.trim();
+  const pin  = document.getElementById('new-op-pin')?.value.trim();
+  const role = document.getElementById('new-op-role')?.value;
+  if (!name || pin.length !== 4) { alert('Enter a name and a 4-digit PIN.'); return; }
+  await sbPost('operators', { name, pin, role });
+  ST.operators = await fetchOperators();
+  render();
+}
+
+async function toggleOperator(id, active) {
+  await sbPatch('operators', {id}, {active});
+  ST.operators = await fetchOperators();
+  render();
+}
+
+function renderPanel() {
+  document.getElementById('app').innerHTML = screenPanel();
+}
+
+// ─── RENDER ──────────────────────────────────────────────────────────────────
+function render() {
+  document.getElementById('app').innerHTML =
+    ST.view === 'login' ? screenLogin() : screenPanel();
+}
+
+render();
+</script>
+</body>
+</html>

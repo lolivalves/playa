@@ -1191,18 +1191,23 @@ async function refreshInventory() {
     const pending = localStorage.getItem('playa_pending_order');
     if (pending) {
       const o = JSON.parse(pending);
+      o.stripeSessionId = params.get('session_id');
       S.orders.push(o);
       save();
       S.orderPlaced = o;
       localStorage.removeItem('playa_pending_order');
       localStorage.removeItem(CART_KEY);
       localStorage.removeItem(VIEW_KEY);
-      // Reset checkout state
       S.pinPlaced=false; S.gpsLat=null; S.gpsLng=null; S.gpsAcc=null;
       S.selfieData=null; S.spotNote=''; S.idMethod='selfie';
+      // Save order to Supabase so operators can see it (fire and forget)
+      fetch('/api/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: o })
+      }).catch(e => console.warn('Order sync failed:', e));
     }
     S.view = 'success';
-    // Clean the URL so refreshing doesn't re-trigger this
     window.history.replaceState({}, '', '/');
 
   } else if (params.get('cancelled')) {
