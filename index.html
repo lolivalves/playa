@@ -138,7 +138,7 @@ const PROD_EMOJI  = {
 // ─── STATE ───────────────────────────────────────────────────────────────────
 const CART_KEY = 'playa_cart_v1';
 const VIEW_KEY  = 'playa_view_v1';
-const SAFE_VIEWS = ['home','menu','cart','track','profile','history','support'];
+const SAFE_VIEWS = ['home','menu','cart','track','profile','history','support','suggestions'];
 
 let PRODUCTS = [];
 let S = {
@@ -154,7 +154,9 @@ let S = {
   orderPlaced: null,
   adminView: 'dashboard',
   supportSent: false,
-  supportMsg: ''
+  supportMsg: '',
+  suggestionSent: false,
+  suggestionText: ''
 };
 function save() { localStorage.setItem(ORDERS_KEY, JSON.stringify(S.orders)); }
 function saveCart() {
@@ -638,9 +640,9 @@ function screenProfile() {
       </div>
     </div>
     ${[
-      {i:'📦', l:'Order history', a:`nav('history')`},
-      {i:'🎧', l:'Support',       a:`nav('support')`},
-      {i:'⚙️', l:'Operator panel', a:`nav('admin')`}
+      {i:'📦', l:'Order history',  a:`nav('history')`},
+      {i:'💡', l:'Suggestions',    a:`nav('suggestions')`},
+      {i:'🎧', l:'Support',        a:`nav('support')`},
     ].map(m=>`
       <button onclick="${m.a}"
         style="width:100%;background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px;
@@ -700,6 +702,67 @@ function screenSupport() {
            <button class="btn-primary" style="margin-top:10px;background:var(--navy)" onclick="sendSupport()">Send message</button>`}
     </div>
   </div>`;
+}
+
+// ─── SUGGESTIONS SCREEN ─────────────────────────────────────────────────────
+function screenSuggestions() {
+  return `${backHeader('Suggestions','profile')}
+  <div class="content fade-in" style="padding:14px">
+
+    <!-- Hero motivation block -->
+    <div style="background:var(--navy);border-radius:14px;padding:20px;margin-bottom:14px;text-align:center">
+      <div style="font-size:40px;margin-bottom:10px">💡</div>
+      <div style="color:#fff;font-size:16px;font-weight:700;margin-bottom:8px">Help us build Playa+ with you!</div>
+      <div style="color:rgba(255,255,255,0.72);font-size:13px;line-height:1.6">
+        You're on the beach — you know what's missing better than anyone. Tell us what products, drinks, snacks or features would make your beach day even better. Every suggestion is read by our team. 🏖️
+      </div>
+    </div>
+
+    <!-- Suggestion prompts -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      ${[
+        ['🥤','A drink we don't have?'],
+        ['🍕','A food you'd love?'],
+        ['🛠️','Something we could do better?'],
+        ['⭐','What did you love?'],
+      ].map(([e,l])=>`
+        <div onclick="promptSuggestion('${l}')"
+          style="background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:12px;text-align:center;cursor:pointer;transition:border-color 0.15s"
+          onmousedown="this.style.borderColor='var(--teal)'" onmouseup="this.style.borderColor='var(--border)'">
+          <div style="font-size:24px;margin-bottom:5px">${e}</div>
+          <div style="font-size:11px;color:var(--muted);line-height:1.4">${l}</div>
+        </div>`).join('')}
+    </div>
+
+    <!-- Input card -->
+    <div class="card">
+      <div class="section-label">Your suggestion</div>
+      ${S.suggestionSent ? `
+        <div style="text-align:center;padding:24px 0">
+          <div style="font-size:44px;margin-bottom:12px">🙏</div>
+          <div style="font-weight:700;font-size:16px;color:var(--navy)">Thank you!</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:6px;line-height:1.5">Your idea has been sent to our team.<br>You're helping us build a better Playa+!</div>
+          <button onclick="S.suggestionSent=false;S.suggestionText='';render()"
+            style="margin-top:16px;background:none;border:none;color:var(--teal);font-size:13px;cursor:pointer;font-weight:600;font-family:inherit">
+            + Send another suggestion
+          </button>
+        </div>
+      ` : `
+        <textarea id="suggestion-input" rows="5"
+          placeholder="e.g. It would be amazing to have fresh coconut water, or maybe a combo deal with nachos + a drink…"
+          style="width:100%;padding:11px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;resize:none;color:var(--navy);background:var(--cream);font-family:inherit;line-height:1.5"
+          oninput="S.suggestionText=this.value">${S.suggestionText||''}</textarea>
+        <div style="font-size:11px;color:var(--muted);margin:6px 0 12px;line-height:1.4">
+          No idea is too small — product requests, service feedback, anything goes. We read every single one. 👀
+        </div>
+        <button class="btn-primary" style="width:100%;padding:13px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer"
+          onclick="submitSuggestion()">
+          Send suggestion 💡
+        </button>
+      `}
+    </div>
+  </div>
+  ${bottomNav('profile')}`;
 }
 
 // ─── CHECKOUT HELPERS ────────────────────────────────────────────────────────
@@ -1004,6 +1067,32 @@ function addItem(sku) {
 }
 function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
 function sendSupport() { S.supportMsg=document.getElementById('support-input')?.value||''; S.supportSent=true; render(); }
+
+function promptSuggestion(text) {
+  S.suggestionText = text + ' ';
+  render();
+  setTimeout(()=>{ const el=document.getElementById('suggestion-input'); if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);} }, 100);
+}
+
+async function submitSuggestion() {
+  const text = (document.getElementById('suggestion-input')?.value || S.suggestionText || '').trim();
+  if (!text || text.length < 5) { alert('Please write a suggestion first!'); return; }
+  try {
+    await fetch('https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/suggestions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg',
+        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ text, created_at: new Date().toISOString() })
+    });
+  } catch(e) { console.warn('Suggestion save failed', e); }
+  S.suggestionSent = true;
+  S.suggestionText = '';
+  render();
+}
 function markDone(id) {
   const o=S.orders.find(x=>x.id===id);
   if(o){ o.status='Delivered'; save(); renderAdmin(); }
@@ -1129,8 +1218,9 @@ function render() {
     track:    screenTrack,
     profile:  screenProfile,
     history:  screenHistory,
-    support:  screenSupport,
-    success:  screenSuccess,
+    support:     screenSupport,
+    suggestions: screenSuggestions,
+    success:     screenSuccess,
   };
   app.innerHTML = (screens[S.view] || screenHome)();
   if (S.view==='checkout') bindCheckout();
