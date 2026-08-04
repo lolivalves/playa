@@ -420,7 +420,7 @@ function screenMenu() {
         </div>`).join('')}
     </div>
     ${cartCount()>0 ? `
-      <div style="position:sticky;bottom:72px;padding:0 14px 8px">
+      <div style="padding:8px 14px 16px">
         <button class="btn-primary" onclick="nav('cart')" style="box-shadow:0 4px 18px rgba(244,124,60,0.45)">
           View cart · ${cartCount()} items · $${cartSubtotal().toFixed(2)}
         </button>
