@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="theme-color" content="#0d2b4e"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-title" content="Playa+ Store"/>
+  <title>Playa+ Store Panel</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:   #0d2b4e;
+      --teal:   #2ab5a5;
+      --teal2:  #3ecfbf;
+      --orange: #f47c3c;
+      --sun:    #f5a623;
+      --cream:  #faf6f1;
+      --white:  #ffffff;
+      --border: rgba(0,0,0,0.09);
+      --muted:  #718096;
+      --green:  #22c55e;
+      --red:    #e53e3e;
+    }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a2e45; color: var(--navy); -webkit-font-smoothing: antialiased; }
+    #app { max-width: 480px; min-height: 100dvh; margin: 0 auto; background: var(--cream); box-shadow: 0 0 40px rgba(0,0,0,0.3); }
+    button { font-family: inherit; cursor: pointer; }
+    input, select, textarea { font-family: inherit; outline: none; }
+    ::-webkit-scrollbar { width: 0; }
+    .card { background: var(--white); border: 0.5px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 10px; }
+    .section-label { font-size: 11px; font-weight: 600; color: var(--teal); letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 10px; }
+    .badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+    .badge-pending  { background: #fff8e6; color: #b45309; }
+    .badge-approved { background: #e6f7f5; color: #0d6e63; }
+    .badge-rejected { background: #fff0f0; color: var(--red); }
+    .btn { border: none; border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 600; font-family: inherit; transition: opacity 0.15s; }
+    .btn:active { opacity: 0.8; }
+    .btn-approve { background: #22c55e; color: #fff; }
+    .btn-reject  { background: var(--red); color: #fff; }
+    .btn-navy    { background: var(--navy); color: #fff; }
+    .btn-outline { background: transparent; border: 1.5px solid var(--border); color: var(--navy); }
+    .btn-full    { width: 100%; padding: 13px; font-size: 15px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { width: 32px; height: 32px; border: 3px solid rgba(42,181,165,0.2); border-top-color: var(--teal); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .pulse { animation: pulse 1.5s infinite; }
+    @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+    .slide-in { animation: slideIn 0.2s ease both; }
+    .pin-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--border); transition: background 0.15s; }
+    .pin-dot.filled { background: var(--white); }
+    .tab-btn { flex: 1; padding: 10px 4px; border: none; background: transparent; font-size: 12px; font-weight: 400; color: var(--muted); border-bottom: 2px solid transparent; font-family: inherit; transition: all 0.15s; }
+    .tab-btn.active { font-weight: 700; color: var(--navy); border-bottom-color: var(--orange); }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const SUPA_URL = 'https://gjrmdmyxkisrjhuzrhmg.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
+const HEADERS  = { 'Content-Type':'application/json', 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Prefer': 'return=representation' };
+
+const REJECTION_REASONS = [
+  'Out of stock',
+  'Item unavailable today',
+  'Store closing soon',
+  'Unable to prepare in time',
+  'Other',
+];
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let ST = {
+  view: 'login',
+  operator: null,
+  orders: [],
+  tab: 'pending',
+  pin: '',
+  pinError: '',
+  loading: false,
+  pollInterval: null,
+  rejectingOrderId: null,
+  rejectReason: '',
+  rejectItems: {}, // which items are unavailable
+};
+
+// ─── SUPABASE HELPERS ────────────────────────────────────────────────────────
+async function sbGet(table, params='') {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, { headers: HEADERS });
+  return r.json();
+}
+async function sbPatch(table, match, body) {
+  const params = Object.entries(match).map(([k,v])=>`${k}=eq.${encodeURIComponent(v)}`).join('&');
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, {
+    method: 'PATCH', headers: HEADERS, body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+// ─── AUTH ────────────────────────────────────────────────────────────────────
+async function tryLogin(pin) {
+  ST.loading = true; render();
+  try {
+    const ops = await sbGet('operators', `pin=eq.${pin}&active=eq.true&role=eq.store`);
+    if (ops && ops.length > 0) {
+      ST.operator = ops[0];
+      ST.pin = ''; ST.pinError = '';
+      ST.orders = await fetchOrders();
+      ST.view = 'panel'; ST.tab = 'pending';
+      startPolling();
+    } else {
+      ST.pinError = 'Incorrect PIN. Try again.';
+      ST.pin = '';
+    }
+  } catch(e) { ST.pinError = 'Connection error. Check your internet.'; }
+  ST.loading = false; render();
+}
+
+function logout() {
+  if (ST.pollInterval) clearInterval(ST.pollInterval);
+  ST.operator = null; ST.orders = [];
+  ST.view = 'login'; ST.pin = ''; ST.pinError = '';
+  render();
+}
+
+// ─── DATA ────────────────────────────────────────────────────────────────────
+async function fetchOrders() {
+  try { return await sbGet('orders', 'order=created_at.desc&limit=200'); }
+  catch(e) { return ST.orders; }
+}
+
+function startPolling() {
+  if (ST.pollInterval) clearInterval(ST.pollInterval);
+  ST.pollInterval = setInterval(async () => {
+    const fresh = await fetchOrders();
+    if (JSON.stringify(fresh) !== JSON.stringify(ST.orders)) {
+      ST.orders = fresh; renderPanel();
+    }
+  }, 6000);
+}
+
+// ─── ORDER ACTIONS ───────────────────────────────────────────────────────────
+async function approveOrder(id) {
+  await sbPatch('orders', {id}, {
+    status: 'new',
+    approved_at: new Date().toISOString()
+  });
+  ST.orders = await fetchOrders();
+  renderPanel();
+}
+
+async function confirmReject(id) {
+  ST.rejectingOrderId = id;
+  ST.rejectReason = REJECTION_REASONS[0];
+  ST.rejectItems = {};
+  // Pre-populate item keys from this order
+  const o = ST.orders.find(x=>x.id===id);
+  if (o) {
+    const items = Array.isArray(o.items)?o.items:(typeof o.items==='string'?JSON.parse(o.items):[]);
+    items.forEach(it=>{ ST.rejectItems[it.name] = false; });
+  }
+  renderPanel();
+}
+
+function cancelReject() {
+  ST.rejectingOrderId = null;
+  ST.rejectReason = '';
+  ST.rejectItems = {};
+  renderPanel();
+}
+
+async function doReject(id, stripeSessionId) {
+  const reason = ST.rejectReason || REJECTION_REASONS[0];
+  const unavailableItems = Object.entries(ST.rejectItems)
+    .filter(([,checked])=>checked)
+    .map(([name])=>name)
+    .join(', ');
+
+  // 1. Mark rejected in Supabase with item detail
+  await sbPatch('orders', {id}, {
+    status: 'rejected',
+    rejection_reason: reason,
+    rejected_items: unavailableItems || null,
+    rejected_at: new Date().toISOString()
+  });
+
+  // 2. Trigger Stripe refund via our serverless function
+  try {
+    await fetch('/api/refund', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stripeSessionId, reason })
+    });
+  } catch(e) { console.warn('Refund call failed:', e); }
+
+  ST.rejectingOrderId = null;
+  ST.rejectReason = '';
+  ST.rejectItems = {};
+  ST.orders = await fetchOrders();
+  renderPanel();
+}
+
+// ─── SVG ─────────────────────────────────────────────────────────────────────
+function towerSVG(s=36) {
+  return `<svg width="${s}" height="${s}" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="42" cy="46" r="34" fill="#f5a623"/>
+    <path d="M10 80 Q30 68 50 72 Q70 76 100 68 Q115 82 120 90 L0 90Z" fill="#2ab5a5" opacity="0.7"/>
+    <rect x="46" y="32" width="32" height="24" rx="2" fill="#0d2b4e"/>
+    <rect x="50" y="36" width="8" height="8" rx="1" fill="#fff" opacity="0.9"/>
+    <rect x="62" y="36" width="8" height="8" rx="1" fill="#fff" opacity="0.9"/>
+    <rect x="44" y="54" width="36" height="3" rx="1" fill="#0d2b4e"/>
+    <rect x="42" y="56" width="4" height="22" rx="1" fill="#0d2b4e"/>
+    <rect x="74" y="56" width="4" height="22" rx="1" fill="#0d2b4e"/>
+    <line x1="46" y1="58" x2="60" y2="78" stroke="#0d2b4e" stroke-width="2"/>
+    <line x1="74" y1="58" x2="60" y2="78" stroke="#0d2b4e" stroke-width="2"/>
+    <rect x="57" y="20" width="2" height="12" rx="1" fill="#0d2b4e"/>
+    <path d="M59 21 L67 24 L59 28Z" fill="#0d2b4e"/>
+  </svg>`;
+}
+
+// ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
+function screenLogin() {
+  const dots = [0,1,2,3].map(i =>
+    `<div class="pin-dot ${i < ST.pin.length ? 'filled' : ''}"></div>`
+  ).join('');
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:32px;background:linear-gradient(160deg,#0d2b4e 60%,#1a4a3a)">
+      <div style="margin-bottom:16px">${towerSVG(72)}</div>
+      <div style="color:#fff;font-size:22px;font-weight:800;margin-bottom:4px">playa<span style="color:#f47c3c">+</span></div>
+      <div style="color:rgba(255,255,255,0.5);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:32px">Store Panel</div>
+
+      ${ST.pinError ? `<div style="background:rgba(229,62,62,0.15);border:1px solid rgba(229,62,62,0.35);border-radius:10px;padding:9px 20px;color:#fc8181;font-size:13px;margin-bottom:20px;text-align:center">${ST.pinError}</div>` : ''}
+
+      <div style="color:rgba(255,255,255,0.55);font-size:13px;margin-bottom:18px">Enter your store PIN</div>
+      <div style="display:flex;gap:16px;margin-bottom:32px">${dots}</div>
+
+      ${ST.loading
+        ? `<div class="spinner" style="border-top-color:#f47c3c"></div>`
+        : `<div style="display:grid;grid-template-columns:repeat(3,72px);gap:12px">
+            ${keys.map(k => k==='' ? `<div></div>` : `
+              <button onclick="pinKey('${k}')"
+                style="width:72px;height:72px;border-radius:50%;border:none;font-size:${k==='⌫'?'20px':'22px'};font-weight:600;cursor:pointer;
+                background:${k==='⌫'?'rgba(255,255,255,0.08)':'rgba(255,255,255,0.12)'};color:#fff;transition:background 0.1s"
+                onmousedown="this.style.background='rgba(255,255,255,0.28)'"
+                onmouseup="this.style.background='${k==='⌫'?'rgba(255,255,255,0.08)':'rgba(255,255,255,0.12)'}'">${k}</button>
+            `).join('')}
+          </div>`}
+    </div>`;
+}
+
+// ─── PANEL SCREEN ─────────────────────────────────────────────────────────────
+function screenPanel() {
+  const pending  = ST.orders.filter(o=>o.status==='pending');
+  const done     = ST.orders.filter(o=>['new','claimed','delivered','rejected'].includes(o.status));
+
+  return `
+    <!-- HEADER -->
+    <div style="background:var(--navy);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50">
+      <div style="display:flex;align-items:center;gap:8px">
+        ${towerSVG(32)}
+        <div>
+          <span style="color:#fff;font-size:14px;font-weight:700">playa<span style="color:#f47c3c">+</span></span>
+          <div style="color:var(--teal2);font-size:9px;letter-spacing:1.5px">STORE</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="text-align:right">
+          <div style="color:#fff;font-size:13px;font-weight:600">${ST.operator.name}</div>
+          <div style="color:rgba(255,255,255,0.45);font-size:10px;text-transform:uppercase;letter-spacing:1px">Store staff</div>
+        </div>
+        <button onclick="logout()" style="background:rgba(255,255,255,0.1);border:none;border-radius:8px;padding:6px 10px;color:rgba(255,255,255,0.7);font-size:12px">Exit</button>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div style="display:flex;background:#fff;border-bottom:0.5px solid var(--border);position:sticky;top:56px;z-index:40">
+      <button class="tab-btn ${ST.tab==='pending'?'active':''}" onclick="setTab('pending')">
+        🔔 Pending
+        ${pending.length>0?`<span style="background:#e53e3e;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:3px">${pending.length}</span>`:''}
+      </button>
+      <button class="tab-btn ${ST.tab==='done'?'active':''}" onclick="setTab('done')">
+        📋 History
+      </button>
+    </div>
+
+    <!-- CONTENT -->
+    <div style="padding:12px;padding-bottom:40px;min-height:calc(100dvh - 112px)">
+      ${ST.tab==='pending' ? renderPending(pending) : renderHistory(done)}
+    </div>`;
+}
+
+// ─── PENDING ORDERS ──────────────────────────────────────────────────────────
+function renderPending(orders) {
+  if (!orders.length) return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:72px 20px;text-align:center;color:var(--muted)">
+      <div style="font-size:52px;margin-bottom:14px">✅</div>
+      <div style="font-weight:600;color:var(--navy);font-size:17px">All clear!</div>
+      <div style="font-size:13px;margin-top:6px;line-height:1.5">No orders waiting for review.<br>New orders will appear here automatically.</div>
+    </div>`;
+
+  return `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <span class="pulse" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e53e3e"></span>
+      <span style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px">${orders.length} order${orders.length>1?'s':''} waiting for your review</span>
+    </div>
+    ${orders.map(o => storeOrderCard(o)).join('')}`;
+}
+
+// ─── HISTORY TAB ─────────────────────────────────────────────────────────────
+function renderHistory(orders) {
+  if (!orders.length) return `
+    <div style="padding:60px 20px;text-align:center;color:var(--muted);font-size:13px">
+      No processed orders yet.
+    </div>`;
+
+  const grouped = {
+    'Approved & active': orders.filter(o=>['new','claimed'].includes(o.status)),
+    'Delivered':         orders.filter(o=>o.status==='delivered'),
+    'Rejected':          orders.filter(o=>o.status==='rejected'),
+  };
+
+  return Object.entries(grouped).filter(([,v])=>v.length>0).map(([label,list])=>`
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:12px 0 8px">${label} (${list.length})</div>
+    ${list.map(o=>storeOrderCard(o, true)).join('')}`).join('');
+}
+
+// ─── ORDER CARD ───────────────────────────────────────────────────────────────
+function storeOrderCard(o, readonly=false) {
+  const items   = Array.isArray(o.items) ? o.items : (typeof o.items==='string' ? JSON.parse(o.items) : []);
+  const age     = Math.round((Date.now()-new Date(o.created_at))/60000);
+  const isRejecting = ST.rejectingOrderId === o.id;
+
+  return `
+  <div class="card slide-in" style="margin-bottom:12px;${o.status==='pending'?'border-left:3px solid var(--sun)':o.status==='rejected'?'border-left:3px solid var(--red)':'border-left:3px solid var(--green)'}">
+
+    <!-- TOP ROW -->
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px">
+      <div>
+        <div style="font-weight:700;font-size:15px;color:var(--navy)">Order #${o.order_number}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${age < 60 ? `${age}m ago` : `${Math.round(age/60)}h ago`}</div>
+      </div>
+      <span class="badge badge-${o.status==='new'||o.status==='claimed'||o.status==='delivered'?'approved':o.status}">${
+        o.status==='new'?'Approved':o.status==='claimed'?'With operator':o.status==='delivered'?'Delivered':o.status
+      }</span>
+    </div>
+
+    <!-- ITEMS — most important for store to review -->
+    <div style="background:var(--cream);border-radius:10px;padding:11px 13px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:600;color:var(--teal);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Items to prepare</div>
+      ${items.map(it=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:0.5px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:18px">${it.emoji||'🏖️'}</span>
+            <span style="font-size:14px;font-weight:500;color:var(--navy)">${it.name}</span>
+          </div>
+          <span style="font-size:14px;font-weight:700;color:var(--navy);background:#fff;padding:3px 10px;border-radius:20px;border:0.5px solid var(--border)">×${it.qty}</span>
+        </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;color:var(--navy);padding-top:8px;margin-top:4px">
+        <span>Order total</span><span>$${Number(o.total||0).toFixed(2)}</span>
+      </div>
+    </div>
+
+    <!-- PASSCODE -->
+    ${o.passcode ? `
+    <div style="background:var(--navy);border-radius:9px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <span style="font-size:11px;color:var(--teal2);font-weight:600">🔑 Customer passcode</span>
+      <span style="font-size:22px;font-weight:800;color:#fff;letter-spacing:8px">${o.passcode}</span>
+    </div>` : ''}
+
+    <!-- REJECTION REASON + UNAVAILABLE ITEMS (if rejected) -->
+    ${o.status==='rejected' && o.rejection_reason ? `
+    <div style="background:#fff0f0;border-radius:9px;padding:9px 12px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:600;color:var(--red);margin-bottom:3px">Rejection reason</div>
+      <div style="font-size:13px;color:var(--navy)">${o.rejection_reason}</div>
+    </div>` : ''}
+    ${o.rejected_items ? `
+    <div style="background:#fff8e6;border-radius:9px;padding:9px 12px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:600;color:#b45309;margin-bottom:3px">⚠️ Unavailable items flagged</div>
+      <div style="font-size:13px;color:var(--navy)">${o.rejected_items}</div>
+    </div>` : ''}
+
+    <!-- ACTIONS (pending orders only) -->
+    ${!readonly && o.status==='pending' ? `
+      ${isRejecting ? `
+        <!-- REJECTION CONFIRMATION — item checkboxes + reason -->
+        <div style="background:#fff0f0;border:1px solid rgba(229,62,62,0.25);border-radius:11px;padding:14px">
+          <div style="font-weight:700;font-size:14px;color:var(--red);margin-bottom:4px">❌ Reject this order</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.4">
+            Check which items are unavailable so we can update the menu.
+          </div>
+
+          <!-- Item checkboxes -->
+          <div style="margin-bottom:12px">
+            <div style="font-size:11px;font-weight:600;color:var(--navy);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Which items are unavailable?</div>
+            ${items.map(it=>`
+              <label style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:#fff;border-radius:9px;margin-bottom:6px;cursor:pointer;border:0.5px solid var(--border)">
+                <input type="checkbox" ${ST.rejectItems[it.name]?'checked':''}
+                  onchange="ST.rejectItems['${it.name.replace(/'/g,"\'")}'] = this.checked"
+                  style="width:18px;height:18px;accent-color:#e53e3e;cursor:pointer;flex-shrink:0">
+                <span style="font-size:14px">${it.emoji||'🏖️'}</span>
+                <span style="font-size:13px;font-weight:500;color:var(--navy);flex:1">${it.name}</span>
+                <span style="font-size:12px;color:var(--muted)">×${it.qty}</span>
+              </label>`).join('')}
+          </div>
+
+          <!-- Rejection reason -->
+          <div style="font-size:11px;font-weight:600;color:var(--navy);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Reason for rejection</div>
+          <select onchange="ST.rejectReason=this.value"
+            style="width:100%;padding:10px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;color:var(--navy);background:#fff;margin-bottom:12px;font-family:inherit">
+            ${REJECTION_REASONS.map(r=>`<option value="${r}" ${ST.rejectReason===r?'selected':''}>${r}</option>`).join('')}
+          </select>
+
+          <!-- Action buttons -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <button class="btn btn-outline btn-full" onclick="cancelReject()" style="padding:11px">Cancel</button>
+            <button class="btn btn-reject btn-full" onclick="doReject('${o.id}','${o.stripe_session_id||''}')" style="padding:11px">Confirm reject</button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.5">
+            🔄 A full refund will be issued to the customer automatically.
+          </div>
+        </div>
+      ` : `
+        <!-- APPROVE / REJECT BUTTONS -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <button class="btn btn-reject btn-full" style="padding:13px" onclick="confirmReject('${o.id}')">
+            ❌ Reject
+          </button>
+          <button class="btn btn-approve btn-full" style="padding:13px" onclick="approveOrder('${o.id}')">
+            ✅ Approve
+          </button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center">
+          Approving sends this order to the delivery team.
+        </div>
+      `}
+    ` : ''}
+  </div>`;
+}
+
+// ─── ACTIONS ─────────────────────────────────────────────────────────────────
+function pinKey(k) {
+  if (k==='⌫') { ST.pin=ST.pin.slice(0,-1); ST.pinError=''; render(); return; }
+  if (ST.pin.length>=4) return;
+  ST.pin+=k; render();
+  if (ST.pin.length===4) setTimeout(()=>tryLogin(ST.pin), 150);
+}
+function setTab(t) { ST.tab=t; render(); }
+function confirmReject(id) { ST.rejectingOrderId=id; ST.rejectReason=REJECTION_REASONS[0]; renderPanel(); }
+function cancelReject() { ST.rejectingOrderId=null; ST.rejectReason=''; renderPanel(); }
+
+// ─── RENDER ──────────────────────────────────────────────────────────────────
+function renderPanel() { document.getElementById('app').innerHTML = screenPanel(); }
+function render() {
+  document.getElementById('app').innerHTML =
+    ST.view==='login' ? screenLogin() : screenPanel();
+}
+
+render();
+</script>
+</body>
+</html>

@@ -24,7 +24,7 @@ module.exports = async function handler(req, res) {
       headers: HEADERS,
       body: JSON.stringify({
         order_number:     order.id,
-        status:           'new',
+        status:           'pending', // store must approve before operators see it
         total:            order.total,
         subtotal:         order.subtotal,
         service_fee:      order.service_fee,
@@ -37,7 +37,7 @@ module.exports = async function handler(req, res) {
         selfie_url:       order.selfie || null,
         id_method:        order.idMethod || 'selfie',
         items:            order.items,
-        stripe_session_id: order.stripeSessionId || '',
+        stripe_session_id: order.stripeSessionId || null,
       })
     });
 

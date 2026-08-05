@@ -594,18 +594,81 @@ function screenTrack() {
       <button class="btn-primary" style="max-width:180px" onclick="nav('menu')">Start ordering</button>
     </div>${bottomNav('track')}`;
 
-  const steps = [
-    {l:'Order received', done:true, i:'✅'},
-    {l:'Being prepared', done:true, i:'🧊'},
-    {l:'On the way to you', done:false, i:'🏃'},
-    {l:'Delivered!', done:false, i:'🏖️'}
-  ];
+  // Poll Supabase for live order status every 10s so customer sees rejection/approval
+  if (!o._polling) {
+    o._polling = true;
+    const pollTrack = setInterval(async () => {
+      try {
+        const r = await fetch(
+          'https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/orders?order_number=eq.' + o.id,
+          { headers: { apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg', Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg' } }
+        );
+        const rows = await r.json();
+        if (rows && rows[0]) {
+          const newStatus = rows[0].status;
+          if (newStatus !== o._liveStatus) {
+            o._liveStatus = newStatus;
+            o._rejectionReason = rows[0].rejection_reason || '';
+            if (newStatus !== 'pending') clearInterval(pollTrack);
+            if (S.view === 'track') render();
+          }
+        }
+      } catch(e) {}
+    }, 10000);
+  }
+  o._liveStatus = o._liveStatus || 'pending';
+  const isRejected = o._liveStatus === 'rejected';
+  const isPending  = o._liveStatus === 'pending';
+
+  if (isRejected) {
+    return `${backHeader('Order update','home')}
+    <div class="content fade-in" style="padding:14px;padding-bottom:80px">
+      <div style="background:#e53e3e;border-radius:14px;padding:24px;margin-bottom:14px;text-align:center">
+        <div style="font-size:48px;margin-bottom:10px">😔</div>
+        <div style="color:#fff;font-size:20px;font-weight:800;margin-bottom:8px">Order cancelled</div>
+        <div style="color:rgba(255,255,255,0.88);font-size:13px;line-height:1.7">
+          Unfortunately the store was unable to fulfill your order.
+          ${o._rejectionReason?`<br><strong>Reason: ${o._rejectionReason}</strong>`:''}
+          <br>A full refund has been issued to your card.
+          <br>You will receive a confirmation email shortly.
+        </div>
+      </div>
+      <div class="card" style="text-align:center;padding:16px">
+        <div style="font-size:13px;color:var(--muted);line-height:1.6">
+          Refunds typically appear within 5–10 business days.<br>We are sorry for the inconvenience! 🏖️
+        </div>
+      </div>
+      <button class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px" onclick="nav('menu')">
+        Browse menu again
+      </button>
+    </div>
+    ${bottomNav('track')}`;
+  }
+
+  const steps = isPending
+    ? [
+        {l:'Order received — awaiting store review', done:true,  i:'✅'},
+        {l:'Store preparing your items',             done:false, i:'🧑‍🍳'},
+        {l:'On the way to you',                      done:false, i:'🏃'},
+        {l:'Delivered!',                             done:false, i:'🏖️'}
+      ]
+    : [
+        {l:'Order received',    done:true,  i:'✅'},
+        {l:'Being prepared',    done:true,  i:'🧊'},
+        {l:'On the way to you', done:false, i:'🏃'},
+        {l:'Delivered!',        done:false, i:'🏖️'}
+      ];
+
   return `${backHeader('Order tracking','home')}
   <div class="content fade-in" style="padding:14px;padding-bottom:80px">
     <div style="background:var(--navy);border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">
-      <div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Estimated arrival</div>
-      <div style="color:#fff;font-size:36px;font-weight:800;margin:4px 0">~8 min</div>
-      <div style="color:var(--teal2);font-size:12px">Order #${o.id}</div>
+      ${isPending
+        ? `<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Status</div>
+           <div style="color:#fff;font-size:22px;font-weight:800;margin:6px 0">Store reviewing ✍️</div>
+           <div style="color:var(--teal2);font-size:12px">Hang tight — we will prepare it shortly · Order #${o.id}</div>`
+        : `<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Estimated arrival</div>
+           <div style="color:#fff;font-size:36px;font-weight:800;margin:4px 0">~8 min</div>
+           <div style="color:var(--teal2);font-size:12px">Order #${o.id}</div>`}
     </div>
     <div class="card">
       ${steps.map((s,i)=>`

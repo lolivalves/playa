@@ -267,8 +267,8 @@ function screenPanel() {
   const op = ST.operator;
   const isAdmin = op.role === 'admin';
   const tabs = isAdmin
-    ? [{id:'new',label:'🔔 New'},{id:'mine',label:'📦 Mine'},{id:'all',label:'📋 All'},{id:'dashboard',label:'📊 Stats'},{id:'suggestions',label:'💡 Ideas'}]
-    : [{id:'new',label:'🔔 New'},{id:'mine',label:'📦 Mine'},{id:'all',label:'📋 All'}];
+    ? [{id:'new',label:'🔔 New'},{id:'mine',label:'📦 Mine'},{id:'all',label:'📋 All'},{id:'cancelled',label:'❌ Cancelled'},{id:'dashboard',label:'📊 Stats'},{id:'suggestions',label:'💡 Ideas'}]
+    : [{id:'new',label:'🔔 New'},{id:'mine',label:'📦 Mine'},{id:'all',label:'📋 All'},{id:'cancelled',label:'❌ Cancelled'}];
 
   const newCount   = ST.orders.filter(o=>o.status==='new').length;
   const mineCount  = ST.orders.filter(o=>o.claimed_by===op.id && o.status==='claimed').length;
@@ -308,6 +308,7 @@ function screenPanel() {
       ${ST.tab==='all'       ? renderAll()       : ''}
       ${ST.tab==='dashboard'   ? renderDashboard()   : ''}
       ${ST.tab==='suggestions' ? renderSuggestions() : ''}
+      ${ST.tab==='cancelled'   ? renderCancelled()   : ''}
     </div>`;
 }
 
@@ -542,6 +543,91 @@ function renderDashboard() {
         <button class="btn btn-teal btn-full" onclick="addOperator()">Add operator</button>
       </div>
     </div>`;
+}
+
+// ── CANCELLED TAB ────────────────────────────────────────────────────────────
+function renderCancelled() {
+  const orders = ST.orders.filter(o => o.status === 'rejected' || o.status === 'cancelled');
+
+  if (!orders.length) return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:72px 20px;text-align:center;color:var(--muted)">
+      <div style="font-size:48px;margin-bottom:12px">✅</div>
+      <div style="font-weight:600;color:var(--navy)">No cancellations</div>
+      <div style="font-size:13px;margin-top:6px">Cancelled and rejected orders will appear here.</div>
+    </div>`;
+
+  // Build item frequency map across all cancelled orders
+  const itemFreq = {};
+  orders.forEach(o => {
+    const items = Array.isArray(o.items) ? o.items : (typeof o.items==='string'?JSON.parse(o.items):[]);
+    items.forEach(it => {
+      if (!itemFreq[it.name]) itemFreq[it.name] = { name: it.name, emoji: it.emoji||'🏖️', qty: 0, orders: 0 };
+      itemFreq[it.name].qty    += it.qty;
+      itemFreq[it.name].orders += 1;
+    });
+  });
+  const affectedItems = Object.values(itemFreq).sort((a,b)=>b.orders-a.orders);
+  const totalLost = orders.reduce((s,o)=>s+Number(o.total||0), 0);
+
+  return `
+    <!-- Summary strip -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+      ${[
+        [orders.length, 'Cancelled', '❌', '#e53e3e'],
+        [`$${totalLost.toFixed(2)}`, 'Revenue lost', '💸', '#718096'],
+        [orders.filter(o=>o.rejection_reason).length, 'By store', '🏪', '#b45309'],
+      ].map(([v,l,i,c])=>`
+        <div class="card" style="margin-bottom:0;text-align:center;padding:12px 8px">
+          <div style="font-size:18px;margin-bottom:2px">${i}</div>
+          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">${l}</div>
+          <div style="font-size:18px;font-weight:800;color:${c};margin-top:2px">${v}</div>
+        </div>`).join('')}
+    </div>
+
+    <!-- Items frequently in cancelled orders -->
+    ${affectedItems.length ? `
+    <div class="section-label" style="margin-bottom:8px">Items in cancelled orders</div>
+    ${affectedItems.map(it=>`
+      <div class="card" style="display:flex;align-items:center;gap:10px;padding:11px 13px;margin-bottom:7px">
+        <span style="font-size:22px">${it.emoji}</span>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px;color:var(--navy)">${it.name}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">Appeared in ${it.orders} cancelled order${it.orders>1?'s':''}</div>
+        </div>
+        <span style="background:#fff0f0;color:#e53e3e;font-weight:700;font-size:12px;padding:4px 10px;border-radius:20px">${it.qty} units lost</span>
+      </div>`).join('')}
+    ` : ''}
+
+    <!-- Individual cancelled orders -->
+    <div class="section-label" style="margin:14px 0 8px">Cancelled orders</div>
+    ${orders.map(o => {
+      const items = Array.isArray(o.items) ? o.items : (typeof o.items==='string'?JSON.parse(o.items):[]);
+      const age = Math.round((Date.now()-new Date(o.created_at))/60000);
+      return `
+      <div class="card slide-in" style="margin-bottom:10px;border-left:3px solid #e53e3e">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--navy)">Order #${o.order_number}</div>
+            <div style="font-size:11px;color:var(--muted)">${new Date(o.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+          </div>
+          <span class="badge" style="background:#fff0f0;color:#e53e3e">Cancelled</span>
+        </div>
+        ${items.map(it=>`<div style="font-size:12px;color:var(--muted);padding:2px 0">${it.emoji||'🏖️'} ${it.name} ×${it.qty}</div>`).join('')}
+        <div style="font-weight:700;font-size:13px;color:var(--navy);margin-top:6px;padding-top:6px;border-top:0.5px solid var(--border)">
+          $${Number(o.total||0).toFixed(2)} — refunded
+        </div>
+        ${o.rejection_reason ? `
+        <div style="margin-top:8px;background:#fff0f0;border-radius:8px;padding:7px 10px">
+          <div style="font-size:10px;font-weight:700;color:#e53e3e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Rejection reason</div>
+          <div style="font-size:12px;color:var(--navy)">${o.rejection_reason}</div>
+        </div>` : ''}
+        ${o.rejected_items ? `
+        <div style="margin-top:8px;background:#fff8e6;border-radius:8px;padding:7px 10px">
+          <div style="font-size:10px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">Unavailable items</div>
+          <div style="font-size:12px;color:var(--navy)">${o.rejected_items}</div>
+        </div>` : ''}
+      </div>`;
+    }).join('')}`;
 }
 
 // ── SUGGESTIONS TAB ─────────────────────────────────────────────────────────

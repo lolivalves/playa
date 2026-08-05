@@ -1,15 +1,16 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/ops",      "destination": "/ops.html" },
-    { "source": "/((?!api|ops).*)", "destination": "/index.html" }
+    { "source": "/api/(.*)",  "destination": "/api/$1"    },
+    { "source": "/ops",       "destination": "/ops.html"  },
+    { "source": "/store",     "destination": "/store.html"},
+    { "source": "/((?!api|ops|store).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options",        "value": "DENY" },
+        { "key": "X-Frame-Options",        "value": "DENY"    },
         { "key": "Referrer-Policy",        "value": "strict-origin-when-cross-origin" }
       ]
     },
