@@ -277,12 +277,7 @@ function towerSVG(s=60) {
 function brandHeader(showCart=false) {
   return `<div class="header">
     <div style="display:flex;align-items:center;gap:10px">
-      ${towerSVG(38)}
-      <div>
-        <span style="color:#fff;font-size:19px;font-weight:700;letter-spacing:-0.5px">playa</span>
-        <span style="color:#f47c3c;font-size:19px;font-weight:700">+</span>
-        <div style="color:#3ecfbf;font-size:9px;letter-spacing:2.5px;text-transform:uppercase;margin-top:-2px">we bring it to you</div>
-      </div>
+      <img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-04.png" style="height:34px;object-fit:contain" alt="Playa+">
     </div>
     ${showCart ? `<button onclick="nav('cart')" style="background:rgba(255,255,255,0.15);border:none;border-radius:20px;padding:7px 14px;color:#fff;cursor:pointer;font-size:13px;font-family:inherit">
       ${cartCount()>0 ? `🛒 ${cartCount()} · $${cartSubtotal().toFixed(2)}` : '🛒 Cart'}
@@ -319,7 +314,7 @@ function bottomNav(active) {
 // ─── SCREENS ─────────────────────────────────────────────────────────────────
 function screenLoading() {
   return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;gap:20px">
-    ${towerSVG(90)}
+    <img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png" style="width:90px;height:90px;object-fit:contain" alt="Playa+">
     <div style="font-size:22px;font-weight:700;color:#0d2b4e">playa<span style="color:#f47c3c">+</span></div>
     <div class="spinner"></div>
     <div style="color:#718096;font-size:13px">Loading your beach menu…</div>
@@ -339,7 +334,7 @@ function screenHome() {
   return `${brandHeader()}
   <div class="content fade-in">
     <div style="background:#0d2b4e;padding:8px 0 32px">
-      <div style="display:flex;justify-content:center;padding:16px 0 8px">${towerSVG(120)}</div>
+      <div style="display:flex;justify-content:center;padding:16px 0 8px"><img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png" style="width:160px;height:160px;object-fit:contain" alt="Playa+"></div>
       <div style="text-align:center;padding:0 24px">
         <div style="color:#fff;font-size:23px;font-weight:700;line-height:1.25">Stay on the sand.</div>
         <div style="color:rgba(255,255,255,0.72);font-size:14px;margin-top:8px;line-height:1.5">
