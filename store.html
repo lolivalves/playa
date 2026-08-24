@@ -60,6 +60,67 @@ const SUPA_URL = 'https://gjrmdmyxkisrjhuzrhmg.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
 const HEADERS  = { 'Content-Type':'application/json', 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Prefer': 'return=representation' };
 
+// ─── SOUND ENGINE ────────────────────────────────────────────────────────────
+// Uses Web Audio API to generate a chime — no external files needed.
+// Browser requires a user gesture before audio can play (handled by unlocking
+// on the first PIN keypress), so sound works reliably after login.
+
+let _audioCtx = null;
+let _audioUnlocked = false;
+
+function unlockAudio() {
+  if (_audioUnlocked) return;
+  _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  // Play a silent buffer to unlock audio on iOS/Safari
+  const buf = _audioCtx.createBuffer(1, 1, 22050);
+  const src = _audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(_audioCtx.destination);
+  src.start(0);
+  _audioUnlocked = true;
+}
+
+function playOrderChime() {
+  if (!_audioUnlocked) return;
+  try {
+    const ctx = _audioCtx;
+    const now = ctx.currentTime;
+
+    // Three-note ascending chime: C5 → E5 → G5
+    const notes = [523.25, 659.25, 783.99];
+    notes.forEach((freq, i) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.18);
+
+      // Each note: fade in quickly, hold briefly, fade out
+      gain.gain.setValueAtTime(0, now + i * 0.18);
+      gain.gain.linearRampToValueAtTime(0.35, now + i * 0.18 + 0.04);
+      gain.gain.setValueAtTime(0.35, now + i * 0.18 + 0.12);
+      gain.gain.linearRampToValueAtTime(0, now + i * 0.18 + 0.32);
+
+      osc.start(now + i * 0.18);
+      osc.stop(now + i * 0.18 + 0.35);
+    });
+  } catch(e) { console.warn('Audio error:', e); }
+}
+
+// Track how many pending orders we knew about last time
+// so we only chime when the count INCREASES
+let _lastPendingCount = 0;
+
+function checkAndChime(orders) {
+  const pending = orders.filter(o => o.status === 'pending').length;
+  if (pending > _lastPendingCount) {
+    playOrderChime();
+  }
+  _lastPendingCount = pending;
+}
+
 const REJECTION_REASONS = [
   'Out of stock',
   'Item unavailable today',
@@ -106,6 +167,9 @@ async function tryLogin(pin) {
       ST.pin = ''; ST.pinError = '';
       ST.orders = await fetchOrders();
       ST.view = 'panel'; ST.tab = 'pending';
+      // Chime immediately if pending orders are already waiting
+      _lastPendingCount = 0;
+      checkAndChime(ST.orders);
       startPolling();
     } else {
       ST.pinError = 'Incorrect PIN. Try again.';
@@ -119,6 +183,8 @@ function logout() {
   if (ST.pollInterval) clearInterval(ST.pollInterval);
   ST.operator = null; ST.orders = [];
   ST.view = 'login'; ST.pin = ''; ST.pinError = '';
+  _lastPendingCount = 0;
+  _audioUnlocked = false;
   render();
 }
 
@@ -133,7 +199,12 @@ function startPolling() {
   ST.pollInterval = setInterval(async () => {
     const fresh = await fetchOrders();
     if (JSON.stringify(fresh) !== JSON.stringify(ST.orders)) {
-      ST.orders = fresh; renderPanel();
+      ST.orders = fresh;
+      checkAndChime(fresh); // chime if new pending orders appeared
+      renderPanel();
+    } else {
+      // Even if orders unchanged, keep pending count in sync
+      _lastPendingCount = fresh.filter(o=>o.status==='pending').length;
     }
   }, 6000);
 }
@@ -264,7 +335,12 @@ function screenPanel() {
           <div style="color:#fff;font-size:13px;font-weight:600">${ST.operator.name}</div>
           <div style="color:rgba(255,255,255,0.45);font-size:10px;text-transform:uppercase;letter-spacing:1px">Store staff</div>
         </div>
-        <button onclick="logout()" style="background:rgba(255,255,255,0.1);border:none;border-radius:8px;padding:6px 10px;color:rgba(255,255,255,0.7);font-size:12px">Exit</button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button onclick="toggleSound()" id="sound-btn"
+            style="background:rgba(255,255,255,0.1);border:none;border-radius:8px;padding:6px 10px;color:rgba(255,255,255,0.7);font-size:14px"
+            title="Toggle order sound">🔔</button>
+          <button onclick="logout()" style="background:rgba(255,255,255,0.1);border:none;border-radius:8px;padding:6px 10px;color:rgba(255,255,255,0.7);font-size:12px">Exit</button>
+        </div>
       </div>
     </div>
 
@@ -435,11 +511,22 @@ function storeOrderCard(o, readonly=false) {
 
 // ─── ACTIONS ─────────────────────────────────────────────────────────────────
 function pinKey(k) {
+  unlockAudio(); // first key tap = user gesture = audio unlocked for the session
   if (k==='⌫') { ST.pin=ST.pin.slice(0,-1); ST.pinError=''; render(); return; }
   if (ST.pin.length>=4) return;
   ST.pin+=k; render();
   if (ST.pin.length===4) setTimeout(()=>tryLogin(ST.pin), 150);
 }
+let _soundEnabled = true;
+function toggleSound() {
+  _soundEnabled = !_soundEnabled;
+  const btn = document.getElementById('sound-btn');
+  if (btn) btn.textContent = _soundEnabled ? '🔔' : '🔕';
+}
+// Override playOrderChime to respect the toggle
+const _origChime = playOrderChime;
+function playOrderChime() { if (_soundEnabled) _origChime(); }
+
 function setTab(t) { ST.tab=t; render(); }
 function confirmReject(id) { ST.rejectingOrderId=id; ST.rejectReason=REJECTION_REASONS[0]; renderPanel(); }
 function cancelReject() { ST.rejectingOrderId=null; ST.rejectReason=''; renderPanel(); }
