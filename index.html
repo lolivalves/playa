@@ -138,7 +138,7 @@ const PROD_EMOJI  = {
 // ─── STATE ───────────────────────────────────────────────────────────────────
 const CART_KEY = 'playa_cart_v1';
 const VIEW_KEY  = 'playa_view_v1';
-const SAFE_VIEWS = ['home','menu','cart','track','profile','history','support','suggestions'];
+const SAFE_VIEWS = ['home','menu','cart','track','profile','history','support','suggestions','success'];
 
 let PRODUCTS = [];
 let S = {
@@ -243,8 +243,11 @@ async function loadProducts() {
         inventory: parseInt(r['Inventory'] || r['inventory'] || '999', 10),
       }));
     // Restore last view the user was on (cart, menu, etc.)
-    const savedView = localStorage.getItem(VIEW_KEY);
-    S.view = (savedView && SAFE_VIEWS.includes(savedView)) ? savedView : 'home';
+    // Never overwrite success screen — customer must choose to navigate away
+    if (S.view !== 'success') {
+      const savedView = localStorage.getItem(VIEW_KEY);
+      S.view = (savedView && SAFE_VIEWS.includes(savedView)) ? savedView : 'home';
+    }
   } catch(e) {
     S.view = 'error';
   }
@@ -1120,6 +1123,10 @@ function adminCard(o) {
 // ─── ACTIONS ─────────────────────────────────────────────────────────────────
 function nav(v) {
   if (v==='admin') { S.view='admin'; renderAdmin(); return; }
+  // Leaving success screen — clear it so back/refresh doesn't re-show it
+  if (S.view === 'success') {
+    localStorage.removeItem(VIEW_KEY);
+  }
   S.view=v; render();
 }
 function setFilter(f) { S.catFilter=f; render(); }
@@ -1365,6 +1372,7 @@ async function refreshInventory() {
       }).catch(e => console.warn('Order sync failed:', e));
     }
     S.view = 'success';
+    localStorage.setItem(VIEW_KEY, 'success');
     window.history.replaceState({}, '', '/');
 
   } else if (params.get('cancelled')) {
