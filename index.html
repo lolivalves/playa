@@ -536,7 +536,7 @@ function screenCheckout() {
         <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Describe your spot on the beach</div>
         <textarea id="spot-desc" rows="3" placeholder="e.g. Red umbrella, blue towel, near the volleyball net, wearing a white hat…"
           style="width:100%;padding:11px;border-radius:9px;border:0.5px solid var(--border);font-size:13px;resize:none;color:var(--navy);background:var(--cream);font-family:inherit"
-          oninput="S.spotNote=this.value"></textarea>
+          oninput="S.spotNote=this.value;checkReadyToOrder()"></textarea>
         <div style="font-size:11px;color:var(--muted);margin-top:6px">The more detail the better — umbrella color, clothing, landmarks nearby.</div>
       </div>
     </div>
@@ -898,6 +898,11 @@ function switchIdTab(tab) {
   document.getElementById('panel-selfie').style.display = isSelfie ? 'block' : 'none';
   document.getElementById('panel-desc').style.display   = isSelfie ? 'none' : 'block';
   S.idMethod = tab;
+  // Sync textarea value into state in case user already typed
+  if (!isSelfie) {
+    const ta = document.getElementById('spot-desc');
+    if (ta) S.spotNote = ta.value;
+  }
   checkReadyToOrder();
 }
 
@@ -968,7 +973,10 @@ function checkReadyToOrder() {
 
   const hasGPS     = S.pinPlaced;
   const hasSelfie  = !!S.selfieData;
-  const hasDesc    = (S.spotNote||'').trim().length > 5;
+  // Always read live textarea value as fallback in case oninput missed
+  const liveDesc = document.getElementById('spot-desc')?.value || '';
+  if (liveDesc) S.spotNote = liveDesc;
+  const hasDesc    = (S.spotNote||liveDesc).trim().length > 0;
   const method     = S.idMethod || 'selfie';
   const hasId      = method === 'selfie' ? hasSelfie : hasDesc;
 
