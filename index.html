@@ -122,7 +122,7 @@ const CONFIG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwew
 const ORDERS_KEY = 'playa_orders_v1';
 
 // Live config values (loaded from Config sheet)
-let CONFIG = { service_fee: 4.99, fee_label: 'Service fee', delivery_fee: 0, delivery_label: 'Delivery' };
+let CONFIG = { service_fee: 4.99, fee_label: 'Service fee', delivery_fee: 0, delivery_label: 'Delivery', store_status: 'open', store_message: 'Store not open at this moment' };
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const CAT_EMOJI   = { Drinks:'💧', Snacks:'🥨', Food:'🥗', 'Ice Cream':'🍦' };
@@ -213,8 +213,10 @@ async function loadConfig() {
       const val = (row['Value'] || '').trim();
       if (key === 'service_fee')   CONFIG.service_fee   = parseFloat(val) || 0;
       if (key === 'fee_label')     CONFIG.fee_label     = val || 'Service fee';
-      if (key === 'delivery_fee')  CONFIG.delivery_fee  = parseFloat(val) || 0;
-      if (key === 'delivery_label') CONFIG.delivery_label = val || 'Delivery';
+      if (key === 'delivery_fee')    CONFIG.delivery_fee    = parseFloat(val) || 0;
+      if (key === 'delivery_label')  CONFIG.delivery_label  = val || 'Delivery';
+      if (key === 'store_status')    CONFIG.store_status    = val.toLowerCase() || 'open';
+      if (key === 'store_message')   CONFIG.store_message   = val || 'Store not open at this moment';
     });
   } catch(e) {
     console.warn('Config sheet unavailable, using defaults.');
@@ -245,8 +247,13 @@ async function loadProducts() {
     // Restore last view the user was on (cart, menu, etc.)
     // Never overwrite success screen — customer must choose to navigate away
     if (S.view !== 'success') {
-      const savedView = localStorage.getItem(VIEW_KEY);
-      S.view = (savedView && SAFE_VIEWS.includes(savedView)) ? savedView : 'home';
+      if (CONFIG.store_status !== 'open') {
+        // Store is closed — show standby screen regardless of saved view
+        S.view = 'standby';
+      } else {
+        const savedView = localStorage.getItem(VIEW_KEY);
+        S.view = (savedView && SAFE_VIEWS.includes(savedView)) ? savedView : 'home';
+      }
     }
   } catch(e) {
     S.view = 'error';
@@ -315,6 +322,15 @@ function bottomNav(active) {
 }
 
 // ─── SCREENS ─────────────────────────────────────────────────────────────────
+function screenStandby() {
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:40px 32px;background:var(--navy);text-align:center">
+    <img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png" style="width:200px;height:200px;object-fit:contain;margin-bottom:40px" alt="Playa+">
+    <div style="color:rgba(255,255,255,0.55);font-size:15px;font-weight:400;line-height:1.6;max-width:260px">
+      ${CONFIG.store_message}
+    </div>
+  </div>`;
+}
+
 function screenLoading() {
   return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;gap:20px">
     <img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png" style="width:90px;height:90px;object-fit:contain" alt="Playa+">
@@ -1284,6 +1300,7 @@ function render() {
   const app = document.getElementById('app');
   const screens = {
     loading:  screenLoading,
+    standby:  screenStandby,
     error:    screenError,
     home:     screenHome,
     menu:     screenMenu,
@@ -1320,6 +1337,28 @@ function bindCheckout() {
 // without the customer needing to manually refresh the page.
 async function refreshInventory() {
   try {
+    // Also re-check Config sheet for store_status changes
+    try {
+      const cr = await fetch(CONFIG_CSV + '&t=' + Date.now());
+      const ct = await cr.text();
+      const crows = parseCSV(ct);
+      crows.forEach(row => {
+        const key = (row['Key']||'').trim().toLowerCase();
+        const val = (row['Value']||'').trim();
+        if (key === 'store_status') {
+          const wasOpen = CONFIG.store_status === 'open';
+          CONFIG.store_status = val.toLowerCase();
+          const isOpen = CONFIG.store_status === 'open';
+          // If status changed, re-render immediately
+          if (wasOpen !== isOpen) {
+            if (!isOpen) { S.view = 'standby'; render(); }
+            else { S.view = 'home'; render(); }
+          }
+        }
+        if (key === 'store_message') CONFIG.store_message = val || CONFIG.store_message;
+      });
+    } catch(e) { /* fail silently */ }
+
     const r = await fetch(SHEET_CSV + '&t=' + Date.now()); // bust cache
     const text = await r.text();
     const rows = parseCSV(text);
