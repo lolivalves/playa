@@ -101,7 +101,9 @@
       border-radius: 20px;
     }
     .badge-preparing { background: #fff8e6; color: #b45309; }
-    .badge-delivered { background: #e6f7f5; color: #0d6e63; }
+    .badge-delivered  { background: #e6f7f5; color: #0d6e63; }
+    .badge-preparing  { background: #e0f2fe; color: #0369a1; }
+    .badge-rejected   { background: #fff0f0; color: #e53e3e; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner {
       width: 36px; height: 36px; border: 3px solid rgba(42,181,165,0.2);
@@ -120,6 +122,180 @@
 const SHEET_CSV  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=0&single=true&output=csv';
 const CONFIG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=611850101&single=true&output=csv';
 const ORDERS_KEY = 'playa_orders_v1';
+const AUTH_KEY         = 'playa_auth_v1';
+const ORDERS_CACHE_KEY = 'playa_orders_cache_v1';
+
+// ─── SUPABASE AUTH ────────────────────────────────────────────────────────────
+const SUPA_URL  = 'https://gjrmdmyxkisrjhuzrhmg.supabase.co';
+const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
+
+let AUTH = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
+
+// Refresh auth session and profile from Supabase on every app load
+async function refreshAuthSession() {
+  if (!AUTH?.access_token) return;
+  try {
+    // Refresh the access token using the refresh token
+    const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPA_ANON },
+      body: JSON.stringify({ refresh_token: AUTH.refresh_token })
+    });
+    const data = await r.json();
+    if (data.access_token) {
+      // Re-fetch profile to get latest name
+      const profiles = await supaGet('profiles', `id=eq.${data.user.id}`, data.access_token);
+      const profile = profiles[0] || AUTH.profile || {};
+      saveAuth({
+        access_token:  data.access_token,
+        refresh_token: data.refresh_token || AUTH.refresh_token,
+        user:          data.user,
+        profile
+      });
+    } else {
+      // Token invalid — sign out silently
+      saveAuth(null);
+    }
+  } catch(e) {
+    // Network error — keep existing auth, will retry next visit
+    console.warn('Auth refresh failed:', e.message);
+  }
+}
+// AUTH = { access_token, user: { id, email }, profile: { name } }
+
+// ─── AUTH HELPERS ────────────────────────────────────────────────────────────
+async function supaAuthPost(endpoint, body) {
+  const r = await fetch(`${SUPA_URL}/auth/v1/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPA_ANON },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+async function supaGet(table, params, token) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, {
+    headers: {
+      'apikey': SUPA_ANON,
+      'Authorization': `Bearer ${token || SUPA_ANON}`
+    }
+  });
+  return r.json();
+}
+
+async function supaPost(table, body, token) {
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPA_ANON,
+      'Authorization': `Bearer ${token || SUPA_ANON}`,
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+async function supaPatch(table, match, body, token) {
+  const params = Object.entries(match).map(([k,v])=>`${k}=eq.${encodeURIComponent(v)}`).join('&');
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?${params}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPA_ANON,
+      'Authorization': `Bearer ${token || SUPA_ANON}`,
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+function saveAuth(data) {
+  AUTH = data;
+  if (data) localStorage.setItem(AUTH_KEY, JSON.stringify(data));
+  else localStorage.removeItem(AUTH_KEY);
+}
+
+async function signUp(email, password, name) {
+  const data = await supaAuthPost('signup', { email, password });
+  if (data.access_token) {
+    const profile = { id: data.user.id, email, name: name || '' };
+    await supaPost('profiles', profile, data.access_token);
+    saveAuth({
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token,
+      user:          data.user,
+      profile
+    });
+    return { success: true };
+  }
+  return { error: data.error_description || data.msg || 'Sign up failed' };
+}
+
+async function signIn(email, password) {
+  const data = await supaAuthPost('token?grant_type=password', { email, password });
+  if (data.access_token) {
+    const profiles = await supaGet('profiles', `id=eq.${data.user.id}`, data.access_token);
+    const profile = profiles[0] || { name: '' };
+    saveAuth({
+      access_token:  data.access_token,
+      refresh_token: data.refresh_token,
+      user:          data.user,
+      profile
+    });
+    return { success: true };
+  }
+  return { error: data.error_description || data.msg || 'Incorrect email or password' };
+}
+
+async function signOut() {
+  if (AUTH?.access_token) {
+    await fetch(`${SUPA_URL}/auth/v1/logout`, {
+      method: 'POST',
+      headers: { 'apikey': SUPA_ANON, 'Authorization': `Bearer ${AUTH.access_token}` }
+    }).catch(()=>{});
+  }
+  saveAuth(null);
+}
+
+async function sendPasswordReset(email) {
+  await supaAuthPost('recover', { email });
+}
+
+async function fetchCustomerOrders() {
+  if (!AUTH?.access_token) return [];
+  try {
+    const rows = await supaGet(
+      'orders',
+      `customer_id=eq.${AUTH.user.id}&order=created_at.desc&limit=50`,
+      AUTH.access_token
+    );
+    const orders = Array.isArray(rows) ? rows : [];
+    // Cache to localStorage so orders survive page refresh
+    localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify({
+      userId: AUTH.user.id,
+      orders,
+      cachedAt: Date.now()
+    }));
+    return orders;
+  } catch(e) {
+    // On network failure, return cached orders
+    const cached = JSON.parse(localStorage.getItem(ORDERS_CACHE_KEY) || 'null');
+    if (cached && cached.userId === AUTH?.user?.id) return cached.orders;
+    return [];
+  }
+}
+
+function getCachedOrders() {
+  if (!AUTH?.user?.id) return null;
+  const cached = JSON.parse(localStorage.getItem(ORDERS_CACHE_KEY) || 'null');
+  if (!cached || cached.userId !== AUTH.user.id) return null;
+  // Cache valid for 5 minutes — show instantly, refresh in background
+  const fresh = (Date.now() - cached.cachedAt) < 5 * 60 * 1000;
+  return { orders: cached.orders, fresh };
+}
 
 // Live config values (loaded from Config sheet)
 let CONFIG = { service_fee: 4.99, fee_label: 'Service fee', delivery_fee: 0, delivery_label: 'Delivery', store_status: 'open', store_message: 'Store not open at this moment' };
@@ -136,7 +312,8 @@ const PROD_EMOJI  = {
 };
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
-const CART_KEY = 'playa_cart_v1';
+const CART_KEY  = 'playa_cart_v1';
+const ORDER_KEY = 'playa_current_order_v1';
 const VIEW_KEY  = 'playa_view_v1';
 const SAFE_VIEWS = ['home','menu','cart','track','profile','history','support','suggestions','success'];
 
@@ -151,10 +328,16 @@ let S = {
   selfieData: null,
   idMethod: 'selfie',
   spotNote: '',
-  orderPlaced: null,
+  orderPlaced: JSON.parse(localStorage.getItem('playa_current_order_v1') || 'null'),
   adminView: 'dashboard',
   supportSent: false,
   supportMsg: '',
+  authMode: 'login',
+  editingProfile: false,
+  authError: '',
+  authLoading: false,
+  cloudOrders: [],
+  historyLoaded: false,
   suggestionSent: false,
   suggestionText: ''
 };
@@ -738,14 +921,54 @@ function screenTrack() {
 }
 
 function screenProfile() {
-  return `${backHeader('My profile', 'home')}
+  if (!AUTH) return screenProfileGuest();
+  const name  = AUTH.profile?.name || '';
+  const email = AUTH.user?.email || '';
+  const initials = name ? name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2) : email[0]?.toUpperCase() || '?';
+  if (S.editingProfile) {
+    const phone = AUTH.profile?.phone || '';
+    return `${backHeader('Edit profile','profile')}
+    <div class="content fade-in" style="padding:16px;padding-bottom:80px">
+      <div class="card">
+        <div class="section-label">Your details</div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Full name</label>
+          <input id="edit-name" type="text" value="${name}" placeholder="Your name"
+            autocomplete="name"
+            style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Email <span style="opacity:0.5">(cannot be changed)</span></label>
+          <input type="email" value="${email}" disabled
+            style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--muted);background:#f0f0f0;font-family:inherit">
+        </div>
+        <div style="margin-bottom:16px">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Phone <span style="opacity:0.5">(optional)</span></label>
+          <input id="edit-phone" type="tel" value="${phone}" placeholder="+1 310 000 0000"
+            autocomplete="tel"
+            style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button onclick="S.editingProfile=false;render()"
+            style="padding:12px;border-radius:10px;border:0.5px solid var(--border);background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;color:var(--navy)">Cancel</button>
+          <button onclick="saveProfile()" class="btn-primary"
+            style="padding:12px;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">Save</button>
+        </div>
+      </div>
+    </div>
+    ${bottomNav('profile')}`;
+  }
+
+  return `${backHeader('My profile','home')}
   <div class="content fade-in" style="padding:14px;padding-bottom:80px">
     <div class="card" style="display:flex;align-items:center;gap:14px">
-      <div style="width:54px;height:54px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;font-weight:700">AR</div>
-      <div>
-        <div style="font-weight:700;font-size:16px">Alex Rivera</div>
-        <div style="font-size:13px;color:var(--muted)">alex@example.com</div>
+      <div style="width:54px;height:54px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;font-weight:700;flex-shrink:0">${initials}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:16px;color:var(--navy)">${name||'Tap Edit to add your name'}</div>
+        <div style="font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${email}</div>
+        ${AUTH.profile?.phone ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">${AUTH.profile.phone}</div>` : ''}
       </div>
+      <button onclick="editProfile()" style="background:none;border:0.5px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">Edit</button>
     </div>
     ${[
       {i:'📦', l:'Order history',  a:`nav('history')`},
@@ -759,31 +982,128 @@ function screenProfile() {
         <span style="font-size:14px;font-weight:500;flex:1;color:var(--navy)">${m.l}</span>
         <span style="color:var(--muted);font-size:18px">›</span>
       </button>`).join('')}
+    <button onclick="doSignOut()"
+      style="width:100%;background:none;border:0.5px solid rgba(229,62,62,0.3);border-radius:12px;padding:14px 16px;
+      display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;font-family:inherit;color:#e53e3e;margin-top:4px">
+      <span style="font-size:20px">🚪</span>
+      <span style="font-size:14px;font-weight:500;flex:1">Sign out</span>
+    </button>
+  </div>
+  ${bottomNav('profile')}`;
+}
+
+function screenProfileGuest() {
+  // Not logged in — show login/register form
+  const mode = S.authMode || 'login';
+  const err  = S.authError || '';
+  const loading = S.authLoading || false;
+  return `${backHeader('My profile','home')}
+  <div class="content fade-in" style="padding:20px;padding-bottom:80px">
+    <div style="text-align:center;padding:20px 0 24px">
+      <img src="${ICON_URL}" style="width:80px;height:80px;object-fit:contain;margin-bottom:14px" alt="Playa+">
+      <div style="font-weight:700;font-size:18px;color:var(--navy);margin-bottom:6px">
+        ${mode==='login' ? 'Welcome back!' : mode==='register' ? 'Create your account' : 'Reset password'}
+      </div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.5">
+        ${mode==='login' ? 'Sign in to view your order history and profile.' : mode==='register' ? 'Save your orders and access them from any device.' : 'Enter your email and we will send you a reset link.'}
+      </div>
+    </div>
+
+    ${err ? `<div style="background:#fff0f0;border:0.5px solid rgba(229,62,62,0.3);border-radius:10px;padding:10px 14px;font-size:13px;color:#e53e3e;margin-bottom:14px;text-align:center">${err}</div>` : ''}
+
+    <div class="card" style="padding:18px">
+      ${mode==='register' ? `
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Your name</label>
+          <input id="auth-name" type="text" placeholder="e.g. Alex Rivera" autocomplete="name"
+            style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">
+        </div>` : ''}
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Email address</label>
+        <input id="auth-email" type="email" placeholder="you@example.com" autocomplete="email"
+          style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">
+      </div>
+      ${mode!=='reset' ? `
+        <div style="margin-bottom:16px">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Password</label>
+          <input id="auth-password" type="password" placeholder="${mode==='register'?'Choose a password (min 6 chars)':'Your password'}" autocomplete="${mode==='register'?'new-password':'current-password'}"
+            style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">
+        </div>` : '<div style="margin-bottom:16px"></div>'}
+      <button onclick="doAuth('${mode}')" class="btn-primary"
+        style="width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;${loading?'opacity:0.6':''}">
+        ${loading ? '⏳ Please wait…' : mode==='login' ? 'Sign in' : mode==='register' ? 'Create account' : 'Send reset link'}
+      </button>
+    </div>
+
+    ${mode==='login' ? `
+      <div style="text-align:center;margin-top:14px">
+        <button onclick="S.authMode='reset';S.authError='';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Forgot password?</button>
+      </div>
+      <div style="text-align:center;margin-top:10px;font-size:13px;color:var(--muted)">
+        No account? <button onclick="S.authMode='register';S.authError='';render()" style="background:none;border:none;color:var(--teal);font-weight:600;cursor:pointer;font-family:inherit">Sign up free</button>
+      </div>` :
+    mode==='register' ? `
+      <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--muted)">
+        Already have an account? <button onclick="S.authMode='login';S.authError='';render()" style="background:none;border:none;color:var(--teal);font-weight:600;cursor:pointer;font-family:inherit">Sign in</button>
+      </div>` :
+    `<div style="text-align:center;margin-top:14px">
+        <button onclick="S.authMode='login';S.authError='';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">← Back to sign in</button>
+      </div>`}
   </div>
   ${bottomNav('profile')}`;
 }
 
 function screenHistory() {
+  if (!AUTH) {
+    S.authMode = 'login'; S.authError = '';
+    return screenProfileGuest();
+  }
+  // Show cached orders instantly, refresh in background
+  const cached = getCachedOrders();
+  if (!S.historyLoaded) {
+    if (cached) {
+      // Show cached immediately
+      S.cloudOrders = cached.orders;
+      S.historyLoaded = true;
+    }
+    // Always refresh from Supabase in background
+    fetchCustomerOrders().then(orders => {
+      S.cloudOrders = orders;
+      S.historyLoaded = true;
+      if (S.view === 'history') render();
+    });
+  }
+  const orders = S.cloudOrders || [];
   return `${backHeader('Order history','profile')}
   <div class="content fade-in" style="padding:14px">
-    ${!S.orders.length
-      ? `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;text-align:center;color:var(--muted)">
-          <div style="font-size:44px">📦</div>
-          <div style="color:var(--navy);font-weight:600;font-size:16px">No orders yet</div>
-          <div style="font-size:13px">Your order history will appear here.</div>
-        </div>`
-      : [...S.orders].reverse().map(o=>`
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
-            <div>
-              <div style="font-weight:700;font-size:14px">Order #${o.id}</div>
-              <div style="font-size:11px;color:var(--muted)">${o.date}</div>
-            </div>
-            <span class="badge badge-${o.status.toLowerCase()}">${o.status}</span>
-          </div>
-          ${o.items.map(it=>`<div style="font-size:13px;color:var(--muted);padding:2px 0">${it.emoji} ${it.name} ×${it.qty}</div>`).join('')}
-          <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:9px;font-weight:700;font-size:14px">$${o.total.toFixed(2)}</div>
-        </div>`).join('')}
+    ${!S.historyLoaded
+      ? `<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;flex-direction:column;gap:14px">
+          <div class="spinner"></div>
+          <div style="font-size:13px;color:var(--muted)">Loading your orders…</div>
+         </div>`
+      : !orders.length
+        ? `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;text-align:center;color:var(--muted)">
+            <div style="font-size:44px">📦</div>
+            <div style="color:var(--navy);font-weight:600;font-size:16px">No orders yet</div>
+            <div style="font-size:13px">Your order history will appear here.</div>
+           </div>`
+        : orders.map(o => {
+            const items = Array.isArray(o.items)?o.items:(typeof o.items==='string'?JSON.parse(o.items):[]);
+            const statusLabel = {pending:'Pending',new:'In progress',claimed:'In progress',delivered:'Delivered',rejected:'Cancelled'}[o.status]||o.status;
+            const badgeClass  = o.status==='delivered'?'delivered':o.status==='rejected'?'rejected':'preparing';
+            return `<div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+                <div>
+                  <div style="font-weight:700;font-size:14px;color:var(--navy)">Order #${o.order_number}</div>
+                  <div style="font-size:11px;color:var(--muted)">${new Date(o.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+                </div>
+                <span class="badge badge-${badgeClass}">${statusLabel}</span>
+              </div>
+              ${items.map(it=>`<div style="font-size:13px;color:var(--muted);padding:2px 0">${it.emoji||'🏖️'} ${it.name} ×${it.qty}</div>`).join('')}
+              <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:9px;font-weight:700;font-size:14px;color:var(--navy)">$${Number(o.total||0).toFixed(2)}</div>
+              ${o.rejection_reason?`<div style="margin-top:6px;font-size:11px;background:#fff0f0;padding:5px 9px;border-radius:7px;color:#e53e3e">${o.rejection_reason}</div>`:''}
+            </div>`;
+          }).join('')}
   </div>`;
 }
 
@@ -1170,9 +1490,19 @@ function adminCard(o) {
 // ─── ACTIONS ─────────────────────────────────────────────────────────────────
 function nav(v) {
   if (v==='admin') { S.view='admin'; renderAdmin(); return; }
-  // Leaving success screen — clear it so back/refresh doesn't re-show it
+  // Leaving success screen — clear stored view
   if (S.view === 'success') {
     localStorage.removeItem(VIEW_KEY);
+  }
+  // Clear current order when going home or to menu (order journey complete)
+  if (['home','menu'].includes(v)) {
+    localStorage.removeItem(ORDER_KEY);
+    S.orderPlaced = null;
+  }
+  // Always reload history fresh from Supabase
+  if (v === 'history') {
+    S.historyLoaded = false;
+    S.cloudOrders = [];
   }
   S.view=v; render();
 }
@@ -1186,6 +1516,60 @@ function addItem(sku) {
   saveCart(); render();
 }
 function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
+// ─── AUTH ACTIONS ────────────────────────────────────────────────────────────
+async function doAuth(mode) {
+  const email    = document.getElementById('auth-email')?.value?.trim() || '';
+  const password = document.getElementById('auth-password')?.value || '';
+  const name     = document.getElementById('auth-name')?.value?.trim() || '';
+
+  if (!email) { S.authError = 'Please enter your email.'; render(); return; }
+  if (mode !== 'reset' && !password) { S.authError = 'Please enter your password.'; render(); return; }
+  if (mode === 'register' && password.length < 6) { S.authError = 'Password must be at least 6 characters.'; render(); return; }
+
+  S.authLoading = true; S.authError = ''; render();
+
+  let result;
+  if (mode === 'login')    result = await signIn(email, password);
+  if (mode === 'register') result = await signUp(email, password, name);
+  if (mode === 'reset')    { await sendPasswordReset(email); S.authLoading=false; S.authError=''; S.authMode='login'; S.authResetSent=true; render(); return; }
+
+  S.authLoading = false;
+  if (result.success) {
+    S.historyLoaded = false;
+    S.cloudOrders = [];
+    nav('profile');
+  } else {
+    S.authError = result.error || 'Something went wrong.';
+    render();
+  }
+}
+
+async function doSignOut() {
+  await signOut();
+  S.cloudOrders = [];
+  S.historyLoaded = false;
+  S.editingProfile = false;
+  localStorage.removeItem(ORDERS_CACHE_KEY);
+  nav('home');
+}
+
+async function editProfile() {
+  S.editingProfile = true;
+  render();
+}
+
+async function saveProfile() {
+  const name  = document.getElementById('edit-name')?.value?.trim() || '';
+  const phone = document.getElementById('edit-phone')?.value?.trim() || '';
+  if (AUTH?.access_token) {
+    await supaPatch('profiles', {id: AUTH.user.id}, {name, phone, updated_at: new Date().toISOString()}, AUTH.access_token);
+    AUTH.profile = { ...AUTH.profile, name, phone };
+    saveAuth(AUTH);
+  }
+  S.editingProfile = false;
+  render();
+}
+
 function sendSupport() { S.supportMsg=document.getElementById('support-input')?.value||''; S.supportSent=true; render(); }
 
 function promptSuggestion(el) {
@@ -1247,6 +1631,9 @@ async function placeOrder() {
   );
   const pendingOrder = {
     id: orderId,
+    customerId:    AUTH?.user?.id    || null,
+    customerEmail: AUTH?.user?.email || null,
+    customerName:  AUTH?.profile?.name || null,
     date: new Date().toLocaleDateString(),
     status: 'Preparing',
     total: cartTotal(),
@@ -1442,6 +1829,7 @@ async function refreshInventory() {
     S.orders.push(o);
     save();
     S.orderPlaced = o;
+    localStorage.setItem(ORDER_KEY, JSON.stringify(o));
     localStorage.removeItem('playa_pending_order');
     localStorage.removeItem(CART_KEY);
     localStorage.removeItem(VIEW_KEY);
@@ -1464,6 +1852,7 @@ async function refreshInventory() {
           if (data.success && data.order) {
             o._supabaseId = data.order.id;
             S.orderPlaced = o;
+            localStorage.setItem(ORDER_KEY, JSON.stringify(o));
             console.log('✅ Order saved to Supabase on attempt', attempt + 1, data.order.id);
             break;
           } else {
@@ -1489,6 +1878,13 @@ async function refreshInventory() {
   loadProducts(); // fetch from Google Sheets
   // Refresh inventory every 3 minutes silently
   setInterval(refreshInventory, 3 * 60 * 1000);
+  // Refresh auth session and profile silently on every app load
+  if (AUTH) {
+    refreshAuthSession().then(() => {
+      // Re-render profile if it's currently showing to reflect updated name
+      if (S.view === 'profile') render();
+    });
+  }
 })();
 </script>
 </body>

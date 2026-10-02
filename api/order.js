@@ -77,6 +77,9 @@ module.exports = async function handler(req, res) {
       id_method:         order?.idMethod || 'selfie',
       items:             items,
       stripe_session_id: stripeSessionId,
+      customer_id:       order?.customerId    || null,
+      customer_email:    order?.customerEmail || stripeSession?.customer_details?.email || null,
+      customer_name:     order?.customerName  || stripeSession?.customer_details?.name  || null,
     };
 
     // Save to Supabase
