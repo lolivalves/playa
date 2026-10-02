@@ -1235,8 +1235,18 @@ async function placeOrder() {
   if (btn) btn.disabled = true;
   if (lbl) lbl.innerHTML = '⏳ Redirecting to payment…';
 
+  // Generate a timestamp-based order number (YYMMDDHHMMSS) — unique across sessions
+  const now = new Date();
+  const orderId = parseInt(
+    String(now.getFullYear()).slice(2) +
+    String(now.getMonth()+1).padStart(2,'0') +
+    String(now.getDate()).padStart(2,'0') +
+    String(now.getHours()).padStart(2,'0') +
+    String(now.getMinutes()).padStart(2,'0') +
+    String(now.getSeconds()).padStart(2,'0')
+  );
   const pendingOrder = {
-    id: 1000 + S.orders.length,
+    id: orderId,
     date: new Date().toLocaleDateString(),
     status: 'Preparing',
     total: cartTotal(),

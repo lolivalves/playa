@@ -122,10 +122,10 @@ function checkAndChime(orders) {
 }
 
 const REJECTION_REASONS = [
-  'Out of stock',
-  'Item unavailable today',
-  'Store closing soon',
+  'Select a reason…',
+  'Item unavailable / out of stock',
   'Unable to prepare in time',
+  'Store closing soon',
   'Other',
 ];
 
@@ -240,7 +240,11 @@ function cancelReject() {
 }
 
 async function doReject(id, stripeSessionId) {
-  const reason = ST.rejectReason || REJECTION_REASONS[0];
+  const reason = ST.rejectReason || '';
+  if (!reason || reason === 'Select a reason…') {
+    alert('Please select a rejection reason first.');
+    return;
+  }
   const unavailableItems = Object.entries(ST.rejectItems)
     .filter(([,checked])=>checked)
     .map(([name])=>name)
@@ -528,7 +532,7 @@ const _origChime = playOrderChime;
 function playOrderChime() { if (_soundEnabled) _origChime(); }
 
 function setTab(t) { ST.tab=t; render(); }
-function confirmReject(id) { ST.rejectingOrderId=id; ST.rejectReason=REJECTION_REASONS[0]; renderPanel(); }
+function confirmReject(id) { ST.rejectingOrderId=id; ST.rejectReason='Select a reason…'; renderPanel(); }
 function cancelReject() { ST.rejectingOrderId=null; ST.rejectReason=''; renderPanel(); }
 
 // ─── RENDER ──────────────────────────────────────────────────────────────────
