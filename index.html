@@ -423,17 +423,20 @@ async function loadProducts() {
     const rows = parseCSV(text);
     PRODUCTS = rows
       .filter(r => {
+        const sku    = (r['SKU'] || '').trim();
         const active = (r['Active'] || '').trim().toLowerCase();
-        return active === 'yes' || active === 'active';
+        // Skip rows with empty SKU or not active
+        return sku && (active === 'yes' || active === 'active');
       })
       .map(r => ({
-        sku:       r['SKU'],
-        name:      r['Product Name'],
-        desc:      r['Description'],
-        cat:       r['Category'],
-        img:       r['Product Image URL'] || '',
+        sku:       (r['SKU'] || '').trim(),
+        name:      (r['Product Name'] || '').trim(),
+        desc:      (r['Description'] || '').trim(),
+        cat:       (r['Category'] || '').trim(),
+        img:       (r['Product Image URL'] || '').trim(),
+        // Sheet has Cost ($) column — use Selling Price ($) explicitly by name
         price:     parseFloat(r['Selling Price ($)']) || 0,
-        emoji:     PROD_EMOJI[r['SKU']] || CAT_EMOJI[r['Category']] || '🏖️',
+        emoji:     PROD_EMOJI[(r['SKU']||'').trim()] || CAT_EMOJI[(r['Category']||'').trim()] || '🏖️',
         inventory: parseInt(r['Inventory'] || r['inventory'] || '999', 10),
       }));
     // Restore last view the user was on (cart, menu, etc.)
@@ -448,7 +451,9 @@ async function loadProducts() {
       }
     }
   } catch(e) {
-    S.view = 'error';
+    console.error('loadProducts failed:', e.message);
+    if (!PRODUCTS.length) S.view = 'error';
+    else S.view = 'home';
   }
   render();
 }
