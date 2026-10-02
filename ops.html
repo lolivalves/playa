@@ -7,6 +7,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-title" content="Playa+ Ops"/>
   <title>Playa+ Operator Panel</title>
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -170,7 +174,7 @@ function logout() {
   render();
 }
 
-// ─── ORDER ACTIONS ───────────────────────────────────────────────────────────
+// ─── ORDER ACTIONS ──────────��────────────────────────────────────────────────
 async function claimOrder(orderId) {
   await sbPatch('orders', { id: orderId }, {
     status: 'claimed',

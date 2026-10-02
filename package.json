@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Playa+ Beach Delivery App",
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "stripe": "^14.0.0"
   }
 }

@@ -7,6 +7,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-title" content="Playa+ Store"/>
   <title>Playa+ Store Panel</title>
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -188,7 +192,7 @@ function logout() {
   render();
 }
 
-// ─── DATA ────────────────────────────────────────────────────────────────────
+// ─── DATA ────────────────────────────────────────────────��───────────────────
 async function fetchOrders() {
   try { return await sbGet('orders', 'order=created_at.desc&limit=200'); }
   catch(e) { return ST.orders; }
