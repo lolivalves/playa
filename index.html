@@ -122,7 +122,6 @@
 const SHEET_CSV  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=0&single=true&output=csv';
 const CONFIG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=611850101&single=true&output=csv';
 const ORDERS_KEY       = 'playa_orders_v1';
-const PRODUCTS_CACHE   = 'playa_products_v1';
 const AUTH_KEY         = 'playa_auth_v1';
 const ORDERS_CACHE_KEY = 'playa_orders_cache_v1';
 
@@ -131,17 +130,6 @@ const SUPA_URL = 'https://gjrmdmyxkisrjhuzrhmg.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
 
 let AUTH = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
-
-// Pre-load cached products so app never shows loading spinner on repeat visits
-(function() {
-  try {
-    var cached = JSON.parse(localStorage.getItem('playa_products_v1') || 'null');
-    if (cached && cached.length) {
-      PRODUCTS = cached;
-      console.log('Products loaded from cache:', cached.length);
-    }
-  } catch(e) {}
-})();
 
 async function authFetch(path, opts) {
   const r = await fetch(SUPA_URL + path, opts);
@@ -337,17 +325,9 @@ function parseCSV(text) {
   });
 }
 
-// Universal fetch with timeout — works on all iOS versions
-function fetchTimeout(url, ms) {
-  var timeout = new Promise(function(_, reject) {
-    setTimeout(function() { reject(new Error('timeout')); }, ms);
-  });
-  return Promise.race([fetch(url), timeout]);
-}
-
 async function loadConfig() {
   try {
-    const r = await fetchTimeout(CONFIG_CSV, 5000);
+    const r = await fetch(CONFIG_CSV);
     const text = await r.text();
     const rows = parseCSV(text);
     rows.forEach(row => {
@@ -366,17 +346,9 @@ async function loadConfig() {
 }
 
 async function loadProducts() {
-  // If we already have cached products, show the app immediately
-  // then refresh in background — no spinner on repeat visits
-  if (PRODUCTS.length > 0 && S.view === 'loading') {
-    var sv = localStorage.getItem(VIEW_KEY);
-    S.view = (sv && SAFE_VIEWS.includes(sv)) ? sv : 'home';
-    render(); // show app right away
-  }
-
   try {
     await loadConfig(); // load fee before rendering anything
-    const r = await fetchTimeout(SHEET_CSV, 8000);
+    const r = await fetch(SHEET_CSV);
     const text = await r.text();
     const rows = parseCSV(text);
     PRODUCTS = rows
@@ -394,9 +366,6 @@ async function loadProducts() {
         emoji:     PROD_EMOJI[r['SKU']] || CAT_EMOJI[r['Category']] || '🏖️',
         inventory: parseInt(r['Inventory'] || r['inventory'] || '999', 10),
       }));
-    // Cache products for instant load on next visit
-    try { localStorage.setItem(PRODUCTS_CACHE, JSON.stringify(PRODUCTS)); } catch(e) {}
-
     // Restore last view the user was on (cart, menu, etc.)
     // Never overwrite success screen — customer must choose to navigate away
     if (S.view !== 'success') {
@@ -409,10 +378,7 @@ async function loadProducts() {
       }
     }
   } catch(e) {
-    console.error('loadProducts:', e.message);
-    // Never block on error — always show the app
-    var sv = localStorage.getItem(VIEW_KEY);
-    S.view = (sv && SAFE_VIEWS.includes(sv)) ? sv : 'home';
+    S.view = 'error';
   }
   render();
 }
