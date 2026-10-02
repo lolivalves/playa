@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0d2b4e" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -35,7 +35,8 @@
     }
     #app {
       max-width: 430px;
-      min-height: 100dvh;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
       margin: 0 auto;
       background: var(--cream);
       position: relative;
@@ -46,7 +47,7 @@
     input, textarea { font-family: inherit; outline: none; }
     input:focus, textarea:focus { border-color: var(--teal) !important; }
     ::-webkit-scrollbar { width: 0; }
-    .screen { min-height: 100dvh; display: flex; flex-direction: column; }
+    .screen { min-height: 100vh; display: flex; flex-direction: column; }
     .content { flex: 1; overflow-y: auto; padding-bottom: 80px; }
     .sticky-nav {
       position: fixed;
@@ -389,10 +390,15 @@ function parseCSV(text) {
 async function loadConfig() {
   try {
     // 5 second timeout — never let config fetch block the app from loading
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const r = await fetch(CONFIG_CSV, { signal: controller.signal });
-    clearTimeout(timeout);
+    let r;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      r = await fetch(CONFIG_CSV, { signal: controller.signal });
+      clearTimeout(timeout);
+    } catch(abortErr) {
+      r = await fetch(CONFIG_CSV);
+    }
     const text = await r.text();
     const rows = parseCSV(text);
     rows.forEach(row => {
@@ -415,10 +421,16 @@ async function loadConfig() {
 async function loadProducts() {
   try {
     await loadConfig(); // load fee before rendering anything
-    const ctrl = new AbortController();
-    const tmt  = setTimeout(() => ctrl.abort(), 8000);
-    const r    = await fetch(SHEET_CSV, { signal: ctrl.signal });
-    clearTimeout(tmt);
+    let r;
+    try {
+      const ctrl = new AbortController();
+      const tmt  = setTimeout(() => ctrl.abort(), 8000);
+      r = await fetch(SHEET_CSV, { signal: ctrl.signal });
+      clearTimeout(tmt);
+    } catch(abortErr) {
+      // AbortController not supported or timed out — try without signal
+      r = await fetch(SHEET_CSV);
+    }
     const text = await r.text();
     const rows = parseCSV(text);
     PRODUCTS = rows
@@ -520,7 +532,7 @@ function bottomNav(active) {
 
 // ─── SCREENS ─────────────────────────────────────────────────────────────────
 function screenStandby() {
-  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:40px 32px;background:var(--navy);text-align:center">
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 32px;background:var(--navy);text-align:center">
     <img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png" style="width:200px;height:200px;object-fit:contain;margin-bottom:40px" alt="Playa+">
     <div style="color:rgba(255,255,255,0.55);font-size:15px;font-weight:400;line-height:1.6;max-width:260px">
       ${CONFIG.store_message}
@@ -529,7 +541,7 @@ function screenStandby() {
 }
 
 function screenLoading() {
-  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;gap:20px">
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:20px">
     <img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png" style="width:90px;height:90px;object-fit:contain" alt="Playa+">
     <div style="font-size:22px;font-weight:700;color:#0d2b4e">playa<span style="color:#f47c3c">+</span></div>
     <div class="spinner"></div>
@@ -538,7 +550,7 @@ function screenLoading() {
 }
 
 function screenError() {
-  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;gap:14px;padding:24px;text-align:center">
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:14px;padding:24px;text-align:center">
     <div style="font-size:48px">😕</div>
     <div style="font-weight:700;font-size:18px">Couldn't load the menu</div>
     <div style="color:#718096;font-size:14px">Check your connection and try again.</div>
@@ -1410,7 +1422,7 @@ function renderAdmin() {
           color:${vw===v?'var(--navy)':'var(--muted)'};border-bottom:${vw===v?'2.5px solid #f47c3c':'2px solid transparent'};
           cursor:pointer;text-transform:capitalize;font-family:inherit">${v}</button>`).join('')}
     </div>
-    <div style="background:var(--cream);padding:14px;overflow-y:auto;height:calc(100dvh - 112px)">
+    <div style="background:var(--cream);padding:14px;overflow-y:auto;height:calc(100vh - 112px)">
     ${vw==='dashboard' ? `
       <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px">
         ${[
@@ -1699,7 +1711,7 @@ async function placeOrder() {
 // ─── SUCCESS SCREEN (returned from Stripe) ───────────────────────────────────
 function screenSuccess() {
   const o = S.orderPlaced;
-  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:24px;text-align:center;background:var(--cream)">
+  return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center;background:var(--cream)">
     <div style="font-size:64px;margin-bottom:8px">🎉</div>
     <div style="font-size:22px;font-weight:800;color:var(--navy);margin-bottom:6px">Order confirmed!</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:20px;line-height:1.5">
