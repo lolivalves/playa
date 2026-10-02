@@ -608,31 +608,62 @@ function screenTrack() {
       <button class="btn-primary" style="max-width:180px" onclick="nav('menu')">Start ordering</button>
     </div>${bottomNav('track')}`;
 
-  // Poll Supabase for live order status every 10s so customer sees rejection/approval
+  // Poll Supabase for live order status every 8s
   if (!o._polling) {
     o._polling = true;
+    o._liveStatus = o._liveStatus || null; // null = not yet confirmed from Supabase
+    const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
     const pollTrack = setInterval(async () => {
       try {
+        // Use Supabase UUID if we have it, otherwise fall back to order_number
+        const query = o._supabaseId
+          ? `id=eq.${o._supabaseId}`
+          : `order_number=eq.${o.id}`;
         const r = await fetch(
-          'https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/orders?order_number=eq.' + o.id,
-          { headers: { apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg', Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg' } }
+          `https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/orders?${query}`,
+          { headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` } }
         );
         const rows = await r.json();
         if (rows && rows[0]) {
           const newStatus = rows[0].status;
+          // Cache UUID for future polls if we didn't have it yet
+          if (!o._supabaseId) o._supabaseId = rows[0].id;
           if (newStatus !== o._liveStatus) {
             o._liveStatus = newStatus;
             o._rejectionReason = rows[0].rejection_reason || '';
-            if (newStatus !== 'pending') clearInterval(pollTrack);
+            // Stop polling once order reaches a terminal state
+            if (['new','claimed','delivered','rejected'].includes(newStatus)) {
+              clearInterval(pollTrack);
+            }
             if (S.view === 'track') render();
           }
         }
+        // If rows is empty, order not in Supabase yet — keep polling
       } catch(e) {}
-    }, 10000);
+    }, 8000);
+    // Kick off first poll immediately without waiting 8s
+    setTimeout(async () => {
+      try {
+        const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
+        const query = o._supabaseId ? `id=eq.${o._supabaseId}` : `order_number=eq.${o.id}`;
+        const r = await fetch(
+          `https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/orders?${query}`,
+          { headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` } }
+        );
+        const rows = await r.json();
+        if (rows && rows[0]) {
+          if (!o._supabaseId) o._supabaseId = rows[0].id;
+          o._liveStatus = rows[0].status;
+          o._rejectionReason = rows[0].rejection_reason || '';
+          if (S.view === 'track') render();
+        }
+      } catch(e) {}
+    }, 1500);
   }
-  o._liveStatus = o._liveStatus || 'pending';
-  const isRejected = o._liveStatus === 'rejected';
-  const isPending  = o._liveStatus === 'pending';
+  // Use live status from Supabase; fall back to 'pending' while we wait for first poll
+  const liveStatus = o._liveStatus || 'pending';
+  const isRejected = liveStatus === 'rejected';
+  const isPending  = liveStatus === 'pending';
 
   if (isRejected) {
     return `${backHeader('Order update','home')}
@@ -1403,12 +1434,32 @@ async function refreshInventory() {
       localStorage.removeItem(VIEW_KEY);
       S.pinPlaced=false; S.gpsLat=null; S.gpsLng=null; S.gpsAcc=null;
       S.selfieData=null; S.spotNote=''; S.idMethod='selfie';
-      // Save order to Supabase so operators can see it (fire and forget)
-      fetch('/api/order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: o })
-      }).catch(e => console.warn('Order sync failed:', e));
+      // Save order to Supabase — retry up to 3 times so store definitely sees it
+      (async () => {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const r = await fetch('/api/order', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ order: o })
+            });
+            const data = await r.json();
+            if (data.success && data.order) {
+              // Store the Supabase UUID so the track screen poll can find it
+              o._supabaseId = data.order.id;
+              o._supabaseOrderNumber = data.order.order_number;
+              S.orderPlaced = o;
+              console.log('Order saved to Supabase:', data.order.id);
+              break;
+            } else {
+              console.warn(`Order save attempt ${attempt} failed:`, data);
+            }
+          } catch(e) {
+            console.warn(`Order save attempt ${attempt} error:`, e);
+          }
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+        }
+      })();
     }
     S.view = 'success';
     localStorage.setItem(VIEW_KEY, 'success');
