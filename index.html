@@ -177,7 +177,7 @@ const PROD_EMOJI  = {
 const CART_KEY  = 'playa_cart_v1';
 const ORDER_KEY = 'playa_current_order_v1';
 const VIEW_KEY  = 'playa_view_v1';
-const SAFE_VIEWS = ['home','menu','cart','track','profile','history','support','suggestions','success'];
+const SAFE_VIEWS = ['home','menu','cart','track','profile','history','support','suggestions','success','auth'];
 
 let PRODUCTS = [];
 let S = {
@@ -198,6 +198,8 @@ let S = {
   authError: '',
   authLoading: false,
   editingProfile: false,
+  trackLoaded: false,
+  trackOrder: null,
   suggestionSent: false,
   suggestionText: ''
 };
@@ -351,13 +353,13 @@ function bottomNav(active) {
   const tabs = [
     {id:'home', icon:'🏠', label:'Home'},
     {id:'menu', icon:'🍽️', label:'Menu'},
-    {id:'track', icon:'🚀', label:'Track'},
+    {id:'track', icon:'🚀', label:'Track', badge: S.trackOrder && !['delivered','rejected','cancelled'].includes(S.trackOrder.status)},
     {id:'profile', icon:'👤', label:'Profile'}
   ];
   return `<nav class="sticky-nav">
     ${tabs.map(t=>`
       <button class="nav-btn ${active===t.id?'active':''}" onclick="nav('${t.id}')">
-        <span class="icon">${t.icon}</span>
+        <span class="icon">${t.icon}${t.badge ? '<span style="position:absolute;top:4px;right:calc(50% - 14px);width:8px;height:8px;border-radius:50%;background:#e53e3e;display:inline-block"></span>' : ''}</span>
         <span class="label">${t.label}</span>
       </button>
     `).join('')}
@@ -413,7 +415,7 @@ function screenHome() {
             <span style="font-size:14px;color:var(--navy)">${s[1]}</span>
           </div>`).join('')}
       </div>
-      <button class="btn-primary" onclick="nav('menu')">Order now →</button>
+      <button class="btn-primary" onclick="AUTH ? nav('menu') : nav('auth')">Order now →</button>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px">
         ${[['⏱️','~8 min delivery'],['🆓','Free delivery'],['🏖️','Beach-side only']].map(([e,l])=>`
           <div class="card" style="text-align:center;padding:12px 8px;margin-bottom:0">
@@ -424,6 +426,68 @@ function screenHome() {
     </div>
   </div>
   ${bottomNav('home')}`;
+}
+
+function screenAuth() {
+  var mode    = S.authMode || 'login';
+  var err     = S.authError || '';
+  var loading = S.authLoading || false;
+
+  var header =
+    '<div style="background:var(--navy);padding:14px 16px;display:flex;align-items:center;justify-content:space-between">' +
+      '<button onclick="nav('home')" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 6px 0 0;line-height:1">←</button>' +
+      '<img src="' + LOGO_WHITE + '" style="height:30px;object-fit:contain" alt="Playa+">' +
+      '<div style="width:40px"></div>' +
+    '</div>';
+
+  var body =
+    '<div class="content fade-in" style="padding:24px 20px;padding-bottom:40px">' +
+      '<div style="text-align:center;padding:8px 0 24px">' +
+        '<img src="' + ICON_URL + '" style="width:72px;height:72px;object-fit:contain;margin-bottom:14px" alt="Playa+">' +
+        '<div style="font-weight:700;font-size:20px;color:var(--navy);margin-bottom:6px">' +
+          (mode==='login' ? 'Welcome back!' : mode==='register' ? 'Create your account' : 'Reset password') +
+        '</div>' +
+        '<div style="font-size:13px;color:var(--muted);line-height:1.5">' +
+          (mode==='login' ? 'Sign in to order from the beach.' : mode==='register' ? 'Join Playa+ to start ordering.' : 'Enter your email and we'll send a reset link.') +
+        '</div>' +
+      '</div>' +
+      (err ? '<div style="background:#fff0f0;border-radius:10px;padding:10px 14px;font-size:13px;color:#e53e3e;margin-bottom:14px;text-align:center">' + err + '</div>' : '') +
+      '<div class="card" style="padding:20px">' +
+        (mode==='register' ?
+          '<div style="margin-bottom:12px">' +
+            '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Full name</label>' +
+            '<input id="auth-name" type="text" placeholder="e.g. Alex Rivera" autocomplete="name" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">' +
+          '</div>' : '') +
+        '<div style="margin-bottom:12px">' +
+          '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Email</label>' +
+          '<input id="auth-email" type="email" placeholder="you@example.com" autocomplete="email" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">' +
+        '</div>' +
+        (mode !== 'reset' ?
+          '<div style="margin-bottom:20px">' +
+            '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Password</label>' +
+            '<input id="auth-password" type="password" placeholder="' + (mode==='register' ? 'At least 6 characters' : 'Your password') + '" autocomplete="' + (mode==='register' ? 'new-password' : 'current-password') + '" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">' +
+          '</div>' : '<div style="margin-bottom:20px"></div>') +
+        '<button onclick="doAuth()" class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer' + (loading ? ';opacity:0.6' : '') + '">' +
+          (loading ? '⏳ Please wait…' : mode==='login' ? 'Sign in' : mode==='register' ? 'Create account' : 'Send reset link') +
+        '</button>' +
+      '</div>' +
+      (mode==='login' ?
+        '<div style="text-align:center;margin-top:16px">' +
+          '<button onclick="S.authMode='reset';S.authError='';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Forgot password?</button>' +
+        '</div>' +
+        '<div style="text-align:center;margin-top:10px;font-size:14px;color:var(--muted)">' +
+          'No account? <button onclick="S.authMode='register';S.authError='';render()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit">Sign up free</button>' +
+        '</div>' :
+      mode==='register' ?
+        '<div style="text-align:center;margin-top:16px;font-size:14px;color:var(--muted)">' +
+          'Already have an account? <button onclick="S.authMode='login';S.authError='';render()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit">Sign in</button>' +
+        '</div>' :
+        '<div style="text-align:center;margin-top:16px">' +
+          '<button onclick="S.authMode='login';S.authError='';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">← Back to sign in</button>' +
+        '</div>') +
+    '</div>';
+
+  return header + body;
 }
 
 function screenMenu() {
@@ -643,141 +707,143 @@ function screenCheckout() {
   </div>`;
 }
 function screenTrack() {
-  const o = S.orderPlaced;
-  if (!o) return `${backHeader('Order tracking','home')}
-    <div style="display:flex;align-items:center;justify-content:center;min-height:60vh;flex-direction:column;gap:12px;color:var(--muted)">
-      <div style="font-size:40px">📦</div>
-      <div>No active order yet</div>
-      <button class="btn-primary" style="max-width:180px" onclick="nav('menu')">Start ordering</button>
-    </div>${bottomNav('track')}`;
-
-  // Poll Supabase for live order status every 8s
-  if (!o._polling) {
-    o._polling = true;
-    o._liveStatus = o._liveStatus || null; // null = not yet confirmed from Supabase
-    const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
-    const pollTrack = setInterval(async () => {
-      try {
-        // Use Supabase UUID if we have it, otherwise fall back to order_number
-        const query = o._supabaseId
-          ? `id=eq.${o._supabaseId}`
-          : `order_number=eq.${o.id}`;
-        const r = await fetch(
-          `https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/orders?${query}`,
-          { headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` } }
-        );
-        const rows = await r.json();
+  // Always fetch active order from Supabase — never rely on localStorage
+  if (!S.trackLoaded) {
+    S.trackLoaded = true;
+    S.trackOrder  = null;
+    if (AUTH && AUTH.user) {
+      var token = AUTH.access_token;
+      var uid   = AUTH.user.id;
+      fetch(SUPA_URL + '/rest/v1/orders?customer_id=eq.' + uid +
+            '&status=not.in.(delivered,rejected,cancelled)&order=created_at.desc&limit=1',
+        { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + token } })
+      .then(function(r) { return r.json(); })
+      .then(function(rows) {
         if (rows && rows[0]) {
-          const newStatus = rows[0].status;
-          // Cache UUID for future polls if we didn't have it yet
-          if (!o._supabaseId) o._supabaseId = rows[0].id;
-          if (newStatus !== o._liveStatus) {
-            o._liveStatus = newStatus;
-            o._rejectionReason = rows[0].rejection_reason || '';
-            // Stop polling once order reaches a terminal state
-            if (['new','claimed','delivered','rejected'].includes(newStatus)) {
-              clearInterval(pollTrack);
-            }
-            if (S.view === 'track') render();
-          }
+          S.trackOrder = rows[0];
+          // Start polling for status changes
+          startTrackPoll(rows[0].id, token);
         }
-        // If rows is empty, order not in Supabase yet — keep polling
-      } catch(e) {}
-    }, 8000);
-    // Kick off first poll immediately without waiting 8s
-    setTimeout(async () => {
-      try {
-        const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
-        const query = o._supabaseId ? `id=eq.${o._supabaseId}` : `order_number=eq.${o.id}`;
-        const r = await fetch(
-          `https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/orders?${query}`,
-          { headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` } }
-        );
-        const rows = await r.json();
-        if (rows && rows[0]) {
-          if (!o._supabaseId) o._supabaseId = rows[0].id;
-          o._liveStatus = rows[0].status;
-          o._rejectionReason = rows[0].rejection_reason || '';
-          if (S.view === 'track') render();
-        }
-      } catch(e) {}
-    }, 1500);
+        if (S.view === 'track') render();
+      })
+      .catch(function(e) {
+        console.warn('Track fetch failed:', e);
+        if (S.view === 'track') render();
+      });
+    }
   }
-  // Use live status from Supabase; fall back to 'pending' while we wait for first poll
-  const liveStatus = o._liveStatus || 'pending';
-  const isRejected = liveStatus === 'rejected';
-  const isPending  = liveStatus === 'pending';
+
+  var o = S.trackOrder;
+
+  if (!o) {
+    // Show loading briefly, then "no active order"
+    return backHeader('Order tracking','home') +
+      '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;text-align:center;color:var(--muted)">' +
+        (S.trackLoaded ?
+          '<div style="font-size:44px">📦</div>' +
+          '<div style="color:var(--navy);font-weight:600;font-size:16px">No active order</div>' +
+          '<div style="font-size:13px">Place an order and track it here.</div>' +
+          '<button onclick="nav('menu')" class="btn-primary" style="max-width:180px;margin-top:8px;padding:12px;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer">Order now</button>'
+        :
+          '<div class="spinner"></div>' +
+          '<div style="font-size:13px">Loading your order…</div>'
+        ) +
+      '</div>' +
+      bottomNav('track');
+  }
+
+  var status   = o.status || 'pending';
+  var isRejected = status === 'rejected';
+  var isPending  = status === 'pending';
 
   if (isRejected) {
-    return `${backHeader('Order update','home')}
-    <div class="content fade-in" style="padding:14px;padding-bottom:80px">
-      <div style="background:#e53e3e;border-radius:14px;padding:24px;margin-bottom:14px;text-align:center">
-        <div style="font-size:48px;margin-bottom:10px">😔</div>
-        <div style="color:#fff;font-size:20px;font-weight:800;margin-bottom:8px">Order cancelled</div>
-        <div style="color:rgba(255,255,255,0.88);font-size:13px;line-height:1.7">
-          Unfortunately the store was unable to fulfill your order.
-          ${o._rejectionReason?`<br><strong>Reason: ${o._rejectionReason}</strong>`:''}
-          <br>A full refund has been issued to your card.
-          <br>You will receive a confirmation email shortly.
-        </div>
-      </div>
-      <div class="card" style="text-align:center;padding:16px">
-        <div style="font-size:13px;color:var(--muted);line-height:1.6">
-          Refunds typically appear within 5–10 business days.<br>We are sorry for the inconvenience! 🏖️
-        </div>
-      </div>
-      <button class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px" onclick="nav('menu')">
-        Browse menu again
-      </button>
-    </div>
-    ${bottomNav('track')}`;
+    return backHeader('Order update','home') +
+      '<div class="content fade-in" style="padding:14px;padding-bottom:80px">' +
+        '<div style="background:#e53e3e;border-radius:14px;padding:24px;margin-bottom:14px;text-align:center">' +
+          '<div style="font-size:48px;margin-bottom:10px">😔</div>' +
+          '<div style="color:#fff;font-size:20px;font-weight:800;margin-bottom:8px">Order cancelled</div>' +
+          '<div style="color:rgba(255,255,255,0.88);font-size:13px;line-height:1.7">Unfortunately the store was unable to fulfill your order.' +
+            (o.rejection_reason ? '<br><strong>Reason: ' + o.rejection_reason + '</strong>' : '') +
+            '<br>A full refund has been issued to your card.' +
+          '</div>' +
+        '</div>' +
+        '<div class="card" style="text-align:center;padding:16px">' +
+          '<div style="font-size:13px;color:var(--muted);line-height:1.6">Refunds typically appear within 5–10 business days. 🏖️</div>' +
+        '</div>' +
+        '<button class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px" onclick="S.trackOrder=null;S.trackLoaded=false;nav('menu')">Order again</button>' +
+      '</div>' +
+      bottomNav('track');
   }
 
-  const steps = isPending
-    ? [
-        {l:'Order received — awaiting store review', done:true,  i:'✅'},
-        {l:'Store preparing your items',             done:false, i:'🧑‍🍳'},
-        {l:'On the way to you',                      done:false, i:'🏃'},
-        {l:'Delivered!',                             done:false, i:'🏖️'}
-      ]
-    : [
-        {l:'Order received',    done:true,  i:'✅'},
-        {l:'Being prepared',    done:true,  i:'🧊'},
-        {l:'On the way to you', done:false, i:'🏃'},
-        {l:'Delivered!',        done:false, i:'🏖️'}
-      ];
+  var steps = isPending
+    ? [{l:'Order received — awaiting store review', done:true, i:'✅'},{l:'Store preparing your items', done:false, i:'🧑‍🍳'},{l:'On the way to you', done:false, i:'🏃'},{l:'Delivered!', done:false, i:'🏖️'}]
+    : [{l:'Order received', done:true, i:'✅'},{l:'Being prepared', done:true, i:'🧊'},{l:'On the way to you', done:false, i:'🏃'},{l:'Delivered!', done:false, i:'🏖️'}];
 
-  return `${backHeader('Order tracking','home')}
-  <div class="content fade-in" style="padding:14px;padding-bottom:80px">
-    <div style="background:var(--navy);border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">
-      ${isPending
-        ? `<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Status</div>
-           <div style="color:#fff;font-size:22px;font-weight:800;margin:6px 0">Store reviewing ✍️</div>
-           <div style="color:var(--teal2);font-size:12px">Hang tight — we will prepare it shortly · Order #${o.id}</div>`
-        : `<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Estimated arrival</div>
-           <div style="color:#fff;font-size:36px;font-weight:800;margin:4px 0">~8 min</div>
-           <div style="color:var(--teal2);font-size:12px">Order #${o.id}</div>`}
-    </div>
-    <div class="card">
-      ${steps.map((s,i)=>`
-        <div style="display:flex;align-items:center;gap:13px;padding:10px 0;${i<steps.length-1?'border-bottom:0.5px solid var(--border)':''}">
-          <span style="font-size:20px;width:28px;text-align:center">${s.i}</span>
-          <span style="flex:1;font-size:14px;color:${s.done?'var(--navy)':'var(--muted)'};font-weight:${s.done?'500':'400'}">${s.l}</span>
-          ${s.done ? `<span style="font-size:11px;color:var(--green);font-weight:700">Done</span>`
-                   : `<span style="width:8px;height:8px;border-radius:50%;background:rgba(0,0,0,0.12);display:inline-block"></span>`}
-        </div>`).join('')}
-    </div>
-    <div class="card">
-      <div class="section-label">Your items</div>
-      ${o.items.map(it=>`<div style="font-size:13px;color:var(--muted);padding:3px 0">${it.emoji} ${it.name} ×${it.qty}</div>`).join('')}
-      <div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:9px;font-weight:700;font-size:14px">Total: $${o.total.toFixed(2)}</div>
-    </div>
-    <div style="background:#e6f7f5;border:0.5px solid var(--teal);border-radius:12px;padding:14px;text-align:center">
-      <div style="font-size:14px;color:#0d6e63;font-weight:600">📍 Delivering to your pinned spot</div>
-      ${o.note ? `<div style="font-size:12px;color:#0d6e63;margin-top:5px;opacity:0.85">"${o.note}"</div>` : ''}
-    </div>
-  </div>
-  ${bottomNav('track')}`;
+  var items = Array.isArray(o.items) ? o.items : (typeof o.items==='string' ? JSON.parse(o.items||'[]') : []);
+
+  return backHeader('Order tracking','home') +
+    '<div class="content fade-in" style="padding:14px;padding-bottom:80px">' +
+      '<div style="background:var(--navy);border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">' +
+        (isPending
+          ? '<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Status</div>' +
+            '<div style="color:#fff;font-size:22px;font-weight:800;margin:6px 0">Store reviewing ✍️</div>' +
+            '<div style="color:var(--teal2);font-size:12px">Hang tight — we will prepare it shortly · Order #' + o.order_number + '</div>'
+          : '<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Estimated arrival</div>' +
+            '<div style="color:#fff;font-size:36px;font-weight:800;margin:4px 0">~8 min</div>' +
+            '<div style="color:var(--teal2);font-size:12px">Order #' + o.order_number + '</div>'
+        ) +
+      '</div>' +
+      '<div class="card">' +
+        steps.map(function(s,i) {
+          return '<div style="display:flex;align-items:center;gap:13px;padding:10px 0;' + (i<steps.length-1?'border-bottom:0.5px solid var(--border)':'') + '">' +
+            '<span style="font-size:20px;width:28px;text-align:center">' + s.i + '</span>' +
+            '<span style="flex:1;font-size:14px;color:' + (s.done?'var(--navy)':'var(--muted)') + ';font-weight:' + (s.done?'500':'400') + '">' + s.l + '</span>' +
+            (s.done ? '<span style="font-size:11px;color:var(--green);font-weight:700">Done</span>' : '<span style="width:8px;height:8px;border-radius:50%;background:rgba(0,0,0,0.12);display:inline-block"></span>') +
+          '</div>';
+        }).join('') +
+      '</div>' +
+      '<div class="card">' +
+        '<div class="section-label">Your items</div>' +
+        items.map(function(it) { return '<div style="font-size:13px;color:var(--muted);padding:3px 0">' + (it.emoji||'🏖️') + ' ' + it.name + ' ×' + it.qty + '</div>'; }).join('') +
+        '<div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:9px;font-weight:700;font-size:14px;color:var(--navy)">Total: $' + Number(o.total||0).toFixed(2) + '</div>' +
+      '</div>' +
+      '<div style="background:#e6f7f5;border:0.5px solid var(--teal);border-radius:12px;padding:13px;text-align:center">' +
+        '<div style="font-size:14px;color:#0d6e63;font-weight:600">📍 Delivering to your pinned spot</div>' +
+        (o.spot_note ? '<div style="font-size:12px;color:#0d6e63;margin-top:5px;opacity:0.85">"' + o.spot_note + '"</div>' : '') +
+      '</div>' +
+      (o.passcode ? '<div style="background:var(--navy);border-radius:12px;padding:14px;margin-top:12px;text-align:center">' +
+        '<div style="font-size:11px;color:var(--teal2);font-weight:600;letter-spacing:1.5px;margin-bottom:6px">🔑 YOUR DELIVERY CODE</div>' +
+        '<div style="font-size:44px;font-weight:800;color:#fff;letter-spacing:10px">' + o.passcode + '</div>' +
+        '<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:6px">Share with your delivery person</div>' +
+      '</div>' : '') +
+    '</div>' +
+    bottomNav('track');
+}
+
+// Poll Supabase every 10s for order status changes
+var _trackPollTimer = null;
+function startTrackPoll(orderId, token) {
+  if (_trackPollTimer) clearInterval(_trackPollTimer);
+  _trackPollTimer = setInterval(function() {
+    fetch(SUPA_URL + '/rest/v1/orders?id=eq.' + orderId,
+      { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + token } })
+    .then(function(r) { return r.json(); })
+    .then(function(rows) {
+      if (!rows || !rows[0]) return;
+      var newStatus = rows[0].status;
+      var oldStatus = S.trackOrder ? S.trackOrder.status : null;
+      S.trackOrder = rows[0];
+      // Stop polling when delivered or rejected
+      if (newStatus === 'delivered' || newStatus === 'rejected') {
+        clearInterval(_trackPollTimer);
+        _trackPollTimer = null;
+        // If delivered — refresh history too
+        if (newStatus === 'delivered') { S.historyLoaded = false; }
+      }
+      if (S.view === 'track' && newStatus !== oldStatus) render();
+    })
+    .catch(function() {});
+  }, 10000);
 }
 
 function screenProfile() {
@@ -835,15 +901,49 @@ function screenGuest() {
 }
 
 function screenHistory() {
-  if (!AUTH) { S.authMode='login'; S.authError=''; return screenGuest(); }
+  if (!AUTH) { S.authMode='login'; S.authError=''; S.view='auth'; render(); return ''; }
+
+  // Fetch delivered orders from Supabase
+  if (!S.historyLoaded) {
+    S.historyLoaded = true;
+    var token = AUTH.access_token;
+    var uid   = AUTH.user.id;
+    fetch(SUPA_URL + '/rest/v1/orders?customer_id=eq.' + uid +
+          '&status=eq.delivered&order=created_at.desc&limit=50',
+      { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + token } })
+    .then(function(r) { return r.json(); })
+    .then(function(rows) {
+      S.cloudOrders = Array.isArray(rows) ? rows : [];
+      if (S.view === 'history') render();
+    })
+    .catch(function() {
+      S.cloudOrders = [];
+      if (S.view === 'history') render();
+    });
+  }
+
+  var orders = S.cloudOrders || [];
+
+  var body = !S.historyLoaded
+    ? '<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;flex-direction:column;gap:14px"><div class="spinner"></div><div style="font-size:13px;color:var(--muted)">Loading your orders…</div></div>'
+    : !orders.length
+      ? '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;text-align:center;color:var(--muted)"><div style="font-size:44px">📦</div><div style="color:var(--navy);font-weight:600;font-size:16px">No orders yet</div><div style="font-size:13px">Your completed orders will appear here.</div></div>'
+      : orders.map(function(o) {
+          var items = Array.isArray(o.items) ? o.items : (typeof o.items==='string' ? JSON.parse(o.items||'[]') : []);
+          var date  = new Date(o.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+          return '<div class="card">' +
+            '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">' +
+              '<div><div style="font-weight:700;font-size:14px;color:var(--navy)">Order #' + o.order_number + '</div>' +
+              '<div style="font-size:11px;color:var(--muted)">' + date + '</div></div>' +
+              '<span class="badge badge-delivered">Delivered</span>' +
+            '</div>' +
+            items.map(function(it){ return '<div style="font-size:13px;color:var(--muted);padding:2px 0">' + (it.emoji||'🏖️') + ' ' + it.name + ' ×' + it.qty + '</div>'; }).join('') +
+            '<div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:9px;font-weight:700;font-size:14px;color:var(--navy)">$' + Number(o.total||0).toFixed(2) + '</div>' +
+          '</div>';
+        }).join('');
+
   return backHeader('Order history','profile') +
-    '<div class="content fade-in" style="padding:14px">' +
-      '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;text-align:center;color:var(--muted)">' +
-        '<div style="font-size:44px">📦</div>' +
-        '<div style="color:var(--navy);font-weight:600;font-size:16px">Order history</div>' +
-        '<div style="font-size:13px">Your orders will appear here.</div>' +
-      '</div>' +
-    '</div>';
+    '<div class="content fade-in" style="padding:14px">' + body + '</div>';
 }
 
 function screenSupport() {
@@ -1227,8 +1327,13 @@ function adminCard(o) {
 }
 
 // ─── ACTIONS ─────────────────────────────────────────────────────────────────
+var PROTECTED_VIEWS = ['menu','cart','checkout','track','history','suggestions','support'];
 function nav(v) {
   if (v==='admin') { S.view='admin'; renderAdmin(); return; }
+  // If not logged in and trying to access protected views, show auth wall
+  if (!AUTH && PROTECTED_VIEWS.includes(v)) {
+    S.authMode = 'login'; S.authError = ''; S.view = 'auth'; render(); return;
+  }
   // Leaving success screen — clear stored view
   if (S.view === 'success') {
     localStorage.removeItem(VIEW_KEY);
@@ -1238,6 +1343,10 @@ function nav(v) {
     localStorage.removeItem(ORDER_KEY);
     S.orderPlaced = null;
   }
+  // Reset track/history on navigate so fresh data loads from Supabase
+  if (v === 'track')   { S.trackLoaded = false; S.trackOrder = null; }
+  if (v === 'history') { S.historyLoaded = false; }
+  if (v === 'profile') { S.editingProfile = false; }
   S.view=v; render();
 }
 function setFilter(f) { S.catFilter=f; render(); }
@@ -1264,7 +1373,7 @@ async function doAuth() {
   else if (mode==='register') result = await signUp(email, pw, name);
   else { await sendReset(email); S.authLoading=false; S.authMode='login'; S.authError='Check your email for a reset link.'; render(); return; }
   S.authLoading=false;
-  if (result.success) nav('profile');
+  if (result.success) { S.authMode='login'; nav('menu'); }
   else { S.authError=result.error||'Something went wrong.'; render(); }
 }
 
