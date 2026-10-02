@@ -101,9 +101,7 @@
       border-radius: 20px;
     }
     .badge-preparing { background: #fff8e6; color: #b45309; }
-    .badge-delivered  { background: #e6f7f5; color: #0d6e63; }
-    .badge-preparing  { background: #e0f2fe; color: #0369a1; }
-    .badge-rejected   { background: #fff0f0; color: #e53e3e; }
+    .badge-delivered { background: #e6f7f5; color: #0d6e63; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner {
       width: 36px; height: 36px; border: 3px solid rgba(42,181,165,0.2);
@@ -121,130 +119,44 @@
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const SHEET_CSV  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=0&single=true&output=csv';
 const CONFIG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=611850101&single=true&output=csv';
-const ORDERS_KEY       = 'playa_orders_v1';
-const PRODUCTS_CACHE   = 'playa_products_v1';
-const AUTH_KEY         = 'playa_auth_v1';
-const ORDERS_CACHE_KEY = 'playa_orders_cache_v1';
+const ORDERS_KEY = 'playa_orders_v1';
+const AUTH_KEY   = 'playa_auth_v1';
+const SUPA_URL   = 'https://gjrmdmyxkisrjhuzrhmg.supabase.co';
+const SUPA_KEY   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
+let   AUTH       = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
 
-// ─── SUPABASE AUTH ───────────────────────────────────────────────────────────
-const SUPA_URL = 'https://gjrmdmyxkisrjhuzrhmg.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
+function saveAuth(a) { AUTH = a; if(a) localStorage.setItem(AUTH_KEY,JSON.stringify(a)); else localStorage.removeItem(AUTH_KEY); }
 
-let AUTH = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
-
-// Pre-load cached products so app never shows loading spinner on repeat visits
-(function() {
+async function signIn(email, pw) {
   try {
-    var cached = JSON.parse(localStorage.getItem('playa_products_v1') || 'null');
-    if (cached && cached.length) {
-      PRODUCTS = cached;
-      console.log('Products loaded from cache:', cached.length);
-    }
-  } catch(e) {}
-})();
-
-async function authFetch(path, opts) {
-  const r = await fetch(SUPA_URL + path, opts);
-  return r.json();
+    var r = await fetch(SUPA_URL+'/auth/v1/token?grant_type=password', {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPA_KEY},body:JSON.stringify({email:email,password:pw})});
+    var d = await r.json();
+    if (!d.access_token) return {error: d.error_description || d.msg || 'Incorrect email or password'};
+    saveAuth({access_token:d.access_token,refresh_token:d.refresh_token,user:d.user,profile:{name:'',phone:''}});
+    // Fetch profile in background
+    fetch(SUPA_URL+'/rest/v1/profiles?id=eq.'+d.user.id,{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+d.access_token}}).then(function(r){return r.json();}).then(function(ps){if(ps&&ps[0]){AUTH.profile=ps[0];saveAuth(AUTH);}}).catch(function(){});
+    return {success:true};
+  } catch(e) { return {error:'Connection error'}; }
 }
 
-async function signUp(email, password, name) {
+async function signUp(email, pw, name) {
   try {
-    const d = await authFetch('/auth/v1/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY },
-      body: JSON.stringify({ email, password })
-    });
-    if (!d.access_token) return { error: d.error_description || d.msg || 'Sign up failed' };
-    await authFetch('/rest/v1/profiles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY,
-                 'Authorization': 'Bearer ' + d.access_token, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ id: d.user.id, email, name: name || '' })
-    });
-    const auth = { access_token: d.access_token, refresh_token: d.refresh_token, user: d.user, profile: { name: name || '' } };
-    AUTH = auth; localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
-    return { success: true };
-  } catch(e) { return { error: 'Connection error' }; }
-}
-
-async function signIn(email, password) {
-  try {
-    const d = await authFetch('/auth/v1/token?grant_type=password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY },
-      body: JSON.stringify({ email, password })
-    });
-    if (!d.access_token) return { error: d.error_description || d.msg || 'Incorrect email or password' };
-    const ps = await authFetch('/rest/v1/profiles?id=eq.' + d.user.id + '&select=name,phone', {
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + d.access_token }
-    });
-    const profile = (Array.isArray(ps) && ps[0]) ? ps[0] : { name: '' };
-    const auth = { access_token: d.access_token, refresh_token: d.refresh_token, user: d.user, profile };
-    AUTH = auth; localStorage.setItem(AUTH_KEY, JSON.stringify(auth));
-    return { success: true };
-  } catch(e) { return { error: 'Connection error' }; }
+    var r = await fetch(SUPA_URL+'/auth/v1/signup',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPA_KEY},body:JSON.stringify({email:email,password:pw})});
+    var d = await r.json();
+    if (!d.access_token) return {error: d.error_description || d.msg || 'Sign up failed'};
+    saveAuth({access_token:d.access_token,refresh_token:d.refresh_token,user:d.user,profile:{name:name||'',phone:''}});
+    fetch(SUPA_URL+'/rest/v1/profiles',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+d.access_token,'Prefer':'return=minimal'},body:JSON.stringify({id:d.user.id,email:email,name:name||''})}).catch(function(){});
+    return {success:true};
+  } catch(e) { return {error:'Connection error'}; }
 }
 
 async function signOut() {
-  try {
-    if (AUTH && AUTH.access_token) {
-      await fetch(SUPA_URL + '/auth/v1/logout', {
-        method: 'POST',
-        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + AUTH.access_token }
-      });
-    }
-  } catch(e) {}
-  AUTH = null;
-  localStorage.removeItem(AUTH_KEY);
-  localStorage.removeItem(ORDERS_CACHE_KEY);
+  try { if(AUTH&&AUTH.access_token) await fetch(SUPA_URL+'/auth/v1/logout',{method:'POST',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+AUTH.access_token}}); } catch(e){}
+  saveAuth(null);
 }
 
-async function sendPasswordReset(email) {
-  try {
-    await authFetch('/auth/v1/recover', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY },
-      body: JSON.stringify({ email })
-    });
-  } catch(e) {}
-}
-
-async function fetchCustomerOrders() {
-  if (!AUTH || !AUTH.access_token || !AUTH.user) return [];
-  try {
-    const rows = await authFetch(
-      '/rest/v1/orders?customer_id=eq.' + AUTH.user.id + '&order=created_at.desc&limit=50',
-      { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + AUTH.access_token } }
-    );
-    const orders = Array.isArray(rows) ? rows : [];
-    localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify({ uid: AUTH.user.id, orders, at: Date.now() }));
-    return orders;
-  } catch(e) {
-    const c = JSON.parse(localStorage.getItem(ORDERS_CACHE_KEY) || 'null');
-    return (c && c.uid === AUTH.user.id) ? c.orders : [];
-  }
-}
-
-async function refreshAuth() {
-  if (!AUTH || !AUTH.refresh_token) return;
-  try {
-    const d = await authFetch('/auth/v1/token?grant_type=refresh_token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY },
-      body: JSON.stringify({ refresh_token: AUTH.refresh_token })
-    });
-    if (d.access_token) {
-      const ps = await authFetch('/rest/v1/profiles?id=eq.' + d.user.id + '&select=name,phone', {
-        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + d.access_token }
-      });
-      const profile = (Array.isArray(ps) && ps[0]) ? ps[0] : (AUTH.profile || {});
-      AUTH = { access_token: d.access_token, refresh_token: d.refresh_token || AUTH.refresh_token, user: d.user, profile };
-      localStorage.setItem(AUTH_KEY, JSON.stringify(AUTH));
-    } else {
-      AUTH = null; localStorage.removeItem(AUTH_KEY);
-    }
-  } catch(e) {}
+async function sendReset(email) {
+  try { await fetch(SUPA_URL+'/auth/v1/recover',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPA_KEY},body:JSON.stringify({email:email})}); } catch(e){}
 }
 
 // Live config values (loaded from Config sheet)
@@ -285,10 +197,7 @@ let S = {
   authMode: 'login',
   authError: '',
   authLoading: false,
-  authResetSent: false,
   editingProfile: false,
-  cloudOrders: [],
-  historyLoaded: false,
   suggestionSent: false,
   suggestionText: ''
 };
@@ -337,17 +246,9 @@ function parseCSV(text) {
   });
 }
 
-// Universal fetch with timeout — works on all iOS versions
-function fetchTimeout(url, ms) {
-  var timeout = new Promise(function(_, reject) {
-    setTimeout(function() { reject(new Error('timeout')); }, ms);
-  });
-  return Promise.race([fetch(url), timeout]);
-}
-
 async function loadConfig() {
   try {
-    const r = await fetchTimeout(CONFIG_CSV, 5000);
+    const r = await fetch(CONFIG_CSV);
     const text = await r.text();
     const rows = parseCSV(text);
     rows.forEach(row => {
@@ -366,17 +267,9 @@ async function loadConfig() {
 }
 
 async function loadProducts() {
-  // If we already have cached products, show the app immediately
-  // then refresh in background — no spinner on repeat visits
-  if (PRODUCTS.length > 0 && S.view === 'loading') {
-    var sv = localStorage.getItem(VIEW_KEY);
-    S.view = (sv && SAFE_VIEWS.includes(sv)) ? sv : 'home';
-    render(); // show app right away
-  }
-
   try {
     await loadConfig(); // load fee before rendering anything
-    const r = await fetchTimeout(SHEET_CSV, 8000);
+    const r = await fetch(SHEET_CSV);
     const text = await r.text();
     const rows = parseCSV(text);
     PRODUCTS = rows
@@ -394,9 +287,6 @@ async function loadProducts() {
         emoji:     PROD_EMOJI[r['SKU']] || CAT_EMOJI[r['Category']] || '🏖️',
         inventory: parseInt(r['Inventory'] || r['inventory'] || '999', 10),
       }));
-    // Cache products for instant load on next visit
-    try { localStorage.setItem(PRODUCTS_CACHE, JSON.stringify(PRODUCTS)); } catch(e) {}
-
     // Restore last view the user was on (cart, menu, etc.)
     // Never overwrite success screen — customer must choose to navigate away
     if (S.view !== 'success') {
@@ -409,10 +299,7 @@ async function loadProducts() {
       }
     }
   } catch(e) {
-    console.error('loadProducts:', e.message);
-    // Never block on error — always show the app
-    var sv = localStorage.getItem(VIEW_KEY);
-    S.view = (sv && SAFE_VIEWS.includes(sv)) ? sv : 'home';
+    S.view = 'error';
   }
   render();
 }
@@ -768,6 +655,7 @@ function screenTrack() {
   if (!o._polling) {
     o._polling = true;
     o._liveStatus = o._liveStatus || null; // null = not yet confirmed from Supabase
+    const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
     const pollTrack = setInterval(async () => {
       try {
         // Use Supabase UUID if we have it, otherwise fall back to order_number
@@ -776,7 +664,7 @@ function screenTrack() {
           : `order_number=eq.${o.id}`;
         const r = await fetch(
           `https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/orders?${query}`,
-          { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+          { headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` } }
         );
         const rows = await r.json();
         if (rows && rows[0]) {
@@ -799,10 +687,11 @@ function screenTrack() {
     // Kick off first poll immediately without waiting 8s
     setTimeout(async () => {
       try {
+        const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
         const query = o._supabaseId ? `id=eq.${o._supabaseId}` : `order_number=eq.${o.id}`;
         const r = await fetch(
           `https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/orders?${query}`,
-          { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+          { headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` } }
         );
         const rows = await r.json();
         if (rows && rows[0]) {
@@ -892,151 +781,69 @@ function screenTrack() {
 }
 
 function screenProfile() {
-  if (!AUTH) return screenProfileGuest();
-  const name  = (AUTH.profile && AUTH.profile.name) ? AUTH.profile.name : '';
-  const email = (AUTH.user && AUTH.user.email) ? AUTH.user.email : '';
-  const phone = (AUTH.profile && AUTH.profile.phone) ? AUTH.profile.phone : '';
-  const initials = name ? name.split(' ').map(function(n){return n[0];}).join('').toUpperCase().slice(0,2) : (email[0] || '?').toUpperCase();
-
-  if (S.editingProfile) {
-    return `${backHeader('Edit profile','profile')}
-    <div class="content fade-in" style="padding:16px;padding-bottom:80px">
-      <div class="card">
-        <div class="section-label">Your details</div>
-        <div style="margin-bottom:12px">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Full name</label>
-          <input id="edit-name" type="text" value="${name}" placeholder="Your name" autocomplete="name"
-            style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">
-        </div>
-        <div style="margin-bottom:12px">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Email <span style="opacity:0.5">(cannot be changed)</span></label>
-          <input type="email" value="${email}" disabled
-            style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--muted);background:#f0f0f0;font-family:inherit">
-        </div>
-        <div style="margin-bottom:16px">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Phone <span style="opacity:0.5">(optional)</span></label>
-          <input id="edit-phone" type="tel" value="${phone}" placeholder="+1 310 000 0000" autocomplete="tel"
-            style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <button onclick="S.editingProfile=false;render()"
-            style="padding:12px;border-radius:10px;border:0.5px solid var(--border);background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit;color:var(--navy)">Cancel</button>
-          <button onclick="saveProfile()" class="btn-primary"
-            style="padding:12px;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer">Save</button>
-        </div>
-      </div>
-    </div>
-    ${bottomNav('profile')}`;
-  }
-
-  return `${backHeader('My profile','home')}
-  <div class="content fade-in" style="padding:14px;padding-bottom:80px">
-    <div class="card" style="display:flex;align-items:center;gap:14px">
-      <div style="width:54px;height:54px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;font-weight:700;flex-shrink:0">${initials}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:16px;color:var(--navy)">${name || 'Tap Edit to add your name'}</div>
-        <div style="font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${email}</div>
-        ${phone ? '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + phone + '</div>' : ''}
-      </div>
-      <button onclick="S.editingProfile=true;render()" style="background:none;border:0.5px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">Edit</button>
-    </div>
-    ${[
-      {i:'📦', l:'Order history',  a:"nav('history')"},
-      {i:'💡', l:'Suggestions',    a:"nav('suggestions')"},
-      {i:'🎧', l:'Support',        a:"nav('support')"},
-    ].map(function(m) { return '<button onclick="' + m.a + '" style="width:100%;background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;font-family:inherit"><span style="font-size:20px">' + m.i + '</span><span style="font-size:14px;font-weight:500;flex:1;color:var(--navy)">' + m.l + '</span><span style="color:var(--muted);font-size:18px">›</span></button>'; }).join('')}
-    <button onclick="doSignOut()" style="width:100%;background:none;border:0.5px solid rgba(229,62,62,0.3);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;font-family:inherit;color:#e53e3e;margin-top:4px">
-      <span style="font-size:20px">🚪</span>
-      <span style="font-size:14px;font-weight:500;flex:1">Sign out</span>
-    </button>
-  </div>
-  ${bottomNav('profile')}`;
+  if (!AUTH) return screenGuest();
+  var name = AUTH.profile && AUTH.profile.name ? AUTH.profile.name : '';
+  var email = AUTH.user ? AUTH.user.email : '';
+  var ini = name ? name.split(' ').map(function(n){return n[0];}).join('').toUpperCase().slice(0,2) : email.slice(0,1).toUpperCase();
+  return backHeader('My profile','home') +
+    '<div class="content fade-in" style="padding:14px;padding-bottom:80px">' +
+      '<div class="card" style="display:flex;align-items:center;gap:14px">' +
+        '<div style="width:54px;height:54px;border-radius:50%;background:var(--navy);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;font-weight:700;flex-shrink:0">' + ini + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-weight:700;font-size:16px;color:var(--navy)">' + (name || 'Tap Edit to add your name') + '</div>' +
+          '<div style="font-size:13px;color:var(--muted)">' + email + '</div>' +
+        '</div>' +
+        '<button onclick="S.editingProfile=true;render()" style="background:none;border:0.5px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">Edit</button>' +
+      '</div>' +
+      ['📦,Order history,nav(\'history\')', '💡,Suggestions,nav(\'suggestions\')', '🎧,Support,nav(\'support\')'].map(function(s){
+        var p=s.split(','); return '<button onclick="'+p[2]+'" style="width:100%;background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;font-family:inherit"><span style="font-size:20px">'+p[0]+'</span><span style="font-size:14px;font-weight:500;flex:1;color:var(--navy)">'+p[1]+'</span><span style="color:var(--muted);font-size:18px">›</span></button>';
+      }).join('') +
+      '<button onclick="doSignOut()" style="width:100%;background:none;border:0.5px solid rgba(229,62,62,0.3);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;font-family:inherit;color:#e53e3e;margin-top:4px">' +
+        '<span style="font-size:20px">🚪</span><span style="font-size:14px;font-weight:500;flex:1">Sign out</span>' +
+      '</button>' +
+    '</div>' +
+    bottomNav('profile');
 }
 
-function screenProfileGuest() {
-  const mode    = S.authMode || 'login';
-  const err     = S.authError || '';
-  const loading = S.authLoading || false;
-  return `${backHeader('My profile','home')}
-  <div class="content fade-in" style="padding:20px;padding-bottom:80px">
-    <div style="text-align:center;padding:20px 0 24px">
-      <img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png" style="width:80px;height:80px;object-fit:contain;margin-bottom:14px" alt="Playa+">
-      <div style="font-weight:700;font-size:18px;color:var(--navy);margin-bottom:6px">
-        ${mode==='login' ? 'Welcome back!' : mode==='register' ? 'Create your account' : 'Reset password'}
-      </div>
-      <div style="font-size:13px;color:var(--muted);line-height:1.5">
-        ${mode==='login' ? 'Sign in to view your order history.' : mode==='register' ? 'Save your orders across all your devices.' : 'We will send you a password reset link.'}
-      </div>
-    </div>
-    ${err ? '<div style="background:#fff0f0;border:0.5px solid rgba(229,62,62,0.3);border-radius:10px;padding:10px 14px;font-size:13px;color:#e53e3e;margin-bottom:14px;text-align:center">' + err + '</div>' : ''}
-    <div class="card" style="padding:18px">
-      ${mode==='register' ? '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Your name</label><input id="auth-name" type="text" placeholder="e.g. Alex Rivera" autocomplete="name" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : ''}
-      <div style="margin-bottom:12px">
-        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Email address</label>
-        <input id="auth-email" type="email" placeholder="you@example.com" autocomplete="email"
-          style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">
-      </div>
-      ${mode !== 'reset' ? '<div style="margin-bottom:16px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Password</label><input id="auth-password" type="password" placeholder="' + (mode==='register'?'At least 6 characters':'Your password') + '" autocomplete="' + (mode==='register'?'new-password':'current-password') + '" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '<div style="margin-bottom:16px"></div>'}
-      <button onclick="doAuth()" class="btn-primary"
-        style="width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;${loading?'opacity:0.6':''}">
-        ${loading ? '⏳ Please wait…' : mode==='login' ? 'Sign in' : mode==='register' ? 'Create account' : 'Send reset link'}
-      </button>
-    </div>
-    ${mode==='login' ? '<div style="text-align:center;margin-top:14px"><button onclick="S.authMode='reset';S.authError='';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Forgot password?</button></div><div style="text-align:center;margin-top:10px;font-size:13px;color:var(--muted)">No account? <button onclick="S.authMode='register';S.authError='';render()" style="background:none;border:none;color:var(--teal);font-weight:600;cursor:pointer;font-family:inherit">Sign up free</button></div>'
-    : mode==='register' ? '<div style="text-align:center;margin-top:14px;font-size:13px;color:var(--muted)">Already have an account? <button onclick="S.authMode='login';S.authError='';render()" style="background:none;border:none;color:var(--teal);font-weight:600;cursor:pointer;font-family:inherit">Sign in</button></div>'
-    : '<div style="text-align:center;margin-top:14px"><button onclick="S.authMode='login';S.authError='';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">← Back to sign in</button></div>'}
-  </div>
-  ${bottomNav('profile')}`;
+function screenGuest() {
+  var mode = S.authMode || 'login';
+  var err  = S.authError || '';
+  var loading = S.authLoading || false;
+  var html = backHeader('My profile','home') +
+    '<div class="content fade-in" style="padding:20px;padding-bottom:80px">' +
+      '<div style="text-align:center;padding:20px 0 24px">' +
+        '<img src="' + 'https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png" style="width:80px;height:80px;object-fit:contain;margin-bottom:14px" alt="Playa+">' +
+        '<div style="font-weight:700;font-size:18px;color:var(--navy);margin-bottom:6px">' + (mode==='login'?'Welcome back!':mode==='register'?'Create your account':'Reset password') + '</div>' +
+        '<div style="font-size:13px;color:var(--muted)">' + (mode==='login'?'Sign in to see your orders.':mode==='register'?'Save orders across all devices.':'Enter your email below.') + '</div>' +
+      '</div>' +
+      (err ? '<div style="background:#fff0f0;border-radius:10px;padding:10px 14px;font-size:13px;color:#e53e3e;margin-bottom:14px;text-align:center">' + err + '</div>' : '') +
+      '<div class="card" style="padding:18px">' +
+        (mode==='register' ? '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Your name</label><input id="auth-name" type="text" placeholder="e.g. Alex Rivera" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '') +
+        '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Email</label><input id="auth-email" type="email" placeholder="you@example.com" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' +
+        (mode!=='reset' ? '<div style="margin-bottom:16px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Password</label><input id="auth-password" type="password" placeholder="' + (mode==='register'?'At least 6 characters':'Your password') + '" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '<div style="margin-bottom:16px"></div>') +
+        '<button onclick="doAuth()" class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer' + (loading?';opacity:0.6':'') + '">' + (loading?'⏳ Please wait…':mode==='login'?'Sign in':mode==='register'?'Create account':'Send reset link') + '</button>' +
+      '</div>' +
+      (mode==='login' ?
+        '<div style="text-align:center;margin-top:12px"><button onclick="S.authMode=\'reset\';S.authError=\'\';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Forgot password?</button></div>' +
+        '<div style="text-align:center;margin-top:8px;font-size:13px;color:var(--muted)">No account? <button onclick="S.authMode=\'register\';S.authError=\'\';render()" style="background:none;border:none;color:var(--teal);font-weight:600;cursor:pointer;font-family:inherit">Sign up free</button></div>'
+      : mode==='register' ?
+        '<div style="text-align:center;margin-top:12px;font-size:13px;color:var(--muted)">Have an account? <button onclick="S.authMode=\'login\';S.authError=\'\';render()" style="background:none;border:none;color:var(--teal);font-weight:600;cursor:pointer;font-family:inherit">Sign in</button></div>'
+      : '<div style="text-align:center;margin-top:12px"><button onclick="S.authMode=\'login\';S.authError=\'\';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">← Back to sign in</button></div>') +
+    '</div>' +
+    bottomNav('profile');
+  return html;
 }
-
 
 function screenHistory() {
-  if (!AUTH) {
-    S.authMode = 'login'; S.authError = '';
-    return screenProfileGuest();
-  }
-  // Show cached orders instantly, refresh in background
-  if (!S.historyLoaded) {
-    var cached = JSON.parse(localStorage.getItem(ORDERS_CACHE_KEY) || 'null');
-    if (cached && cached.uid === AUTH.user.id) {
-      S.cloudOrders = cached.orders;
-      S.historyLoaded = true;
-    }
-    fetchCustomerOrders().then(function(orders) {
-      S.cloudOrders = orders;
-      S.historyLoaded = true;
-      if (S.view === 'history') render();
-    });
-  }
-  var orders = S.cloudOrders || [];
-  var statusLabel = function(s) {
-    if (s==='pending') return 'Pending';
-    if (s==='new' || s==='claimed') return 'In progress';
-    if (s==='delivered') return 'Delivered';
-    if (s==='rejected') return 'Cancelled';
-    return s;
-  };
-  var badgeClass = function(s) {
-    if (s==='delivered') return 'delivered';
-    if (s==='rejected') return 'rejected';
-    return 'preparing';
-  };
-  return `${backHeader('Order history','profile')}
-  <div class="content fade-in" style="padding:14px">
-    ${!S.historyLoaded
-      ? '<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;flex-direction:column;gap:14px"><div class="spinner"></div><div style="font-size:13px;color:var(--muted)">Loading your orders…</div></div>'
-      : !orders.length
-        ? '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;text-align:center;color:var(--muted)"><div style="font-size:44px">📦</div><div style="color:var(--navy);font-weight:600;font-size:16px">No orders yet</div><div style="font-size:13px">Your order history will appear here.</div></div>'
-        : orders.map(function(o) {
-            var items = Array.isArray(o.items) ? o.items : (typeof o.items==='string' ? JSON.parse(o.items) : []);
-            var date  = new Date(o.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-            return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px"><div><div style="font-weight:700;font-size:14px;color:var(--navy)">Order #' + o.order_number + '</div><div style="font-size:11px;color:var(--muted)">' + date + '</div></div><span class="badge badge-' + badgeClass(o.status) + '">' + statusLabel(o.status) + '</span></div>' +
-              items.map(function(it){return '<div style="font-size:13px;color:var(--muted);padding:2px 0">' + (it.emoji||'🏖️') + ' ' + it.name + ' ×' + it.qty + '</div>';}).join('') +
-              '<div style="border-top:0.5px solid var(--border);margin-top:10px;padding-top:9px;font-weight:700;font-size:14px;color:var(--navy)">$' + Number(o.total||0).toFixed(2) + '</div>' +
-              (o.rejection_reason ? '<div style="margin-top:6px;font-size:11px;background:#fff0f0;padding:5px 9px;border-radius:7px;color:#e53e3e">' + o.rejection_reason + '</div>' : '') +
-              '</div>';
-          }).join('')}
-  </div>`;
+  if (!AUTH) { S.authMode='login'; S.authError=''; return screenGuest(); }
+  return backHeader('Order history','profile') +
+    '<div class="content fade-in" style="padding:14px">' +
+      '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;text-align:center;color:var(--muted)">' +
+        '<div style="font-size:44px">📦</div>' +
+        '<div style="color:var(--navy);font-weight:600;font-size:16px">Order history</div>' +
+        '<div style="font-size:13px">Your orders will appear here.</div>' +
+      '</div>' +
+    '</div>';
 }
 
 function screenSupport() {
@@ -1431,8 +1238,6 @@ function nav(v) {
     localStorage.removeItem(ORDER_KEY);
     S.orderPlaced = null;
   }
-  if (v === 'history') { S.historyLoaded = false; S.cloudOrders = []; }
-  if (v === 'profile') { S.editingProfile = false; }
   S.view=v; render();
 }
 function setFilter(f) { S.catFilter=f; render(); }
@@ -1446,60 +1251,26 @@ function addItem(sku) {
 }
 function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
 async function doAuth() {
-  var mode     = S.authMode || 'login';
-  var email    = (document.getElementById('auth-email') || {}).value || '';
-  var password = (document.getElementById('auth-password') || {}).value || '';
-  var name     = (document.getElementById('auth-name') || {}).value || '';
-  email = email.trim();
-
-  if (!email) { S.authError = 'Please enter your email.'; render(); return; }
-  if (mode !== 'reset' && !password) { S.authError = 'Please enter your password.'; render(); return; }
-  if (mode === 'register' && password.length < 6) { S.authError = 'Password must be at least 6 characters.'; render(); return; }
-
-  S.authLoading = true; S.authError = ''; render();
-
+  var mode = S.authMode || 'login';
+  var email = ((document.getElementById('auth-email')||{}).value||'').trim();
+  var pw    = (document.getElementById('auth-password')||{}).value||'';
+  var name  = ((document.getElementById('auth-name')||{}).value||'').trim();
+  if (!email) { S.authError='Please enter your email.'; render(); return; }
+  if (mode!=='reset' && !pw) { S.authError='Please enter your password.'; render(); return; }
+  if (mode==='register' && pw.length<6) { S.authError='Password must be at least 6 characters.'; render(); return; }
+  S.authLoading=true; S.authError=''; render();
   var result;
-  if (mode === 'login')    result = await signIn(email, password);
-  else if (mode === 'register') result = await signUp(email, password, name.trim());
-  else {
-    await sendPasswordReset(email);
-    S.authLoading = false; S.authResetSent = true;
-    S.authMode = 'login'; S.authError = '';
-    render(); return;
-  }
-
-  S.authLoading = false;
-  if (result.success) {
-    S.historyLoaded = false; S.cloudOrders = [];
-    nav('profile');
-  } else {
-    S.authError = result.error || 'Something went wrong.';
-    render();
-  }
+  if (mode==='login') result = await signIn(email, pw);
+  else if (mode==='register') result = await signUp(email, pw, name);
+  else { await sendReset(email); S.authLoading=false; S.authMode='login'; S.authError='Check your email for a reset link.'; render(); return; }
+  S.authLoading=false;
+  if (result.success) nav('profile');
+  else { S.authError=result.error||'Something went wrong.'; render(); }
 }
 
 async function doSignOut() {
   await signOut();
-  S.cloudOrders = []; S.historyLoaded = false; S.editingProfile = false;
   nav('home');
-}
-
-async function saveProfile() {
-  var name  = ((document.getElementById('edit-name')  || {}).value || '').trim();
-  var phone = ((document.getElementById('edit-phone') || {}).value || '').trim();
-  if (AUTH && AUTH.access_token) {
-    try {
-      await fetch(SUPA_URL + '/rest/v1/profiles?id=eq.' + AUTH.user.id, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY,
-                   'Authorization': 'Bearer ' + AUTH.access_token, 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ name: name, phone: phone, updated_at: new Date().toISOString() })
-      });
-      AUTH.profile = { name: name, phone: phone };
-      localStorage.setItem(AUTH_KEY, JSON.stringify(AUTH));
-    } catch(e) {}
-  }
-  S.editingProfile = false; render();
 }
 
 function sendSupport() { S.supportMsg=document.getElementById('support-input')?.value||''; S.supportSent=true; render(); }
@@ -1563,9 +1334,6 @@ async function placeOrder() {
   );
   const pendingOrder = {
     id: orderId,
-    customerId:    (AUTH && AUTH.user) ? AUTH.user.id    : null,
-    customerEmail: (AUTH && AUTH.user) ? AUTH.user.email : null,
-    customerName:  (AUTH && AUTH.profile) ? AUTH.profile.name : null,
     date: new Date().toLocaleDateString(),
     status: 'Preparing',
     total: cartTotal(),
@@ -1669,9 +1437,9 @@ function render() {
     track:    screenTrack,
     profile:  screenProfile,
     history:  screenHistory,
-    support:      screenSupport,
-    suggestions:  screenSuggestions,
-    success:      screenSuccess,
+    support:     screenSupport,
+    suggestions: screenSuggestions,
+    success:     screenSuccess,
   };
   app.innerHTML = (screens[S.view] || screenHome)();
   if (S.view==='checkout') bindCheckout();
@@ -1808,8 +1576,6 @@ async function refreshInventory() {
 
   render();       // show loading or success screen immediately
   loadProducts(); // fetch from Google Sheets
-  // Silently refresh auth token in background — never blocks loading
-  if (AUTH) setTimeout(function() { refreshAuth().then(function() { if (S.view==='profile') render(); }); }, 500);
   // Refresh inventory every 3 minutes silently
   setInterval(refreshInventory, 3 * 60 * 1000);
 })();
