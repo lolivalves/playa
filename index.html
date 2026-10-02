@@ -415,7 +415,7 @@ function screenHome() {
             <span style="font-size:14px;color:var(--navy)">${s[1]}</span>
           </div>`).join('')}
       </div>
-      <button class="btn-primary" onclick="AUTH ? nav('menu') : nav('auth')">Order now →</button>
+      <button class="btn-primary" onclick="orderNow()">Order now →</button>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px">
         ${[['⏱️','~8 min delivery'],['🆓','Free delivery'],['🏖️','Beach-side only']].map(([e,l])=>`
           <div class="card" style="text-align:center;padding:12px 8px;margin-bottom:0">
@@ -1345,6 +1345,7 @@ function addItem(sku) {
 }
 function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
 function navHome()     { nav('home'); }
+function orderNow()    { AUTH ? nav('menu') : nav('auth'); }
 function resetTrackNavMenu() { S.trackOrder=null; S.trackLoaded=false; nav('menu'); }
 function navMenu()     { nav('menu'); }
 function navLogin()    { nav('auth'); }
