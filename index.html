@@ -388,28 +388,37 @@ function parseCSV(text) {
 
 async function loadConfig() {
   try {
-    const r = await fetch(CONFIG_CSV);
+    // 5 second timeout — never let config fetch block the app from loading
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const r = await fetch(CONFIG_CSV, { signal: controller.signal });
+    clearTimeout(timeout);
     const text = await r.text();
     const rows = parseCSV(text);
     rows.forEach(row => {
       const key = (row['Key'] || '').trim().toLowerCase();
       const val = (row['Value'] || '').trim();
-      if (key === 'service_fee')   CONFIG.service_fee   = parseFloat(val) || 0;
-      if (key === 'fee_label')     CONFIG.fee_label     = val || 'Service fee';
-      if (key === 'delivery_fee')    CONFIG.delivery_fee    = parseFloat(val) || 0;
-      if (key === 'delivery_label')  CONFIG.delivery_label  = val || 'Delivery';
-      if (key === 'store_status')    CONFIG.store_status    = val.toLowerCase() || 'open';
-      if (key === 'store_message')   CONFIG.store_message   = val || 'Store not open at this moment';
+      if (key === 'service_fee')    CONFIG.service_fee    = parseFloat(val) || 0;
+      if (key === 'fee_label')      CONFIG.fee_label      = val || 'Service fee';
+      if (key === 'delivery_fee')   CONFIG.delivery_fee   = parseFloat(val) || 0;
+      if (key === 'delivery_label') CONFIG.delivery_label = val || 'Delivery';
+      // Only update store_status if explicitly 'closed' — default stays 'open'
+      if (key === 'store_status')   CONFIG.store_status   = (val.toLowerCase() === 'closed') ? 'closed' : 'open';
+      if (key === 'store_message')  CONFIG.store_message  = val || 'Store not open at this moment';
     });
   } catch(e) {
-    console.warn('Config sheet unavailable, using defaults.');
+    // Timeout or network error — keep defaults (store stays open)
+    console.warn('Config sheet unavailable, using defaults. Store stays open.');
   }
 }
 
 async function loadProducts() {
   try {
     await loadConfig(); // load fee before rendering anything
-    const r = await fetch(SHEET_CSV);
+    const ctrl = new AbortController();
+    const tmt  = setTimeout(() => ctrl.abort(), 8000);
+    const r    = await fetch(SHEET_CSV, { signal: ctrl.signal });
+    clearTimeout(tmt);
     const text = await r.text();
     const rows = parseCSV(text);
     PRODUCTS = rows
@@ -1878,12 +1887,13 @@ async function refreshInventory() {
   loadProducts(); // fetch from Google Sheets
   // Refresh inventory every 3 minutes silently
   setInterval(refreshInventory, 3 * 60 * 1000);
-  // Refresh auth session and profile silently on every app load
+  // Refresh auth session silently — never blocks app loading
   if (AUTH) {
-    refreshAuthSession().then(() => {
-      // Re-render profile if it's currently showing to reflect updated name
-      if (S.view === 'profile') render();
-    });
+    setTimeout(() => {
+      refreshAuthSession().then(() => {
+        if (S.view === 'profile') render();
+      }).catch(e => console.warn('Auth refresh error:', e));
+    }, 100);
   }
 })();
 </script>
