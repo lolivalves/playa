@@ -809,7 +809,6 @@ function screenTrack() {
   if (!o._polling) {
     o._polling = true;
     o._liveStatus = o._liveStatus || null; // null = not yet confirmed from Supabase
-    const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
     const pollTrack = setInterval(async () => {
       try {
         // Use Supabase UUID if we have it, otherwise fall back to order_number
@@ -841,7 +840,6 @@ function screenTrack() {
     // Kick off first poll immediately without waiting 8s
     setTimeout(async () => {
       try {
-        const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqcm1kbXl4a2lzcmpodXpyaG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNjg5MTYsImV4cCI6MjEwMDg0NDkxNn0.1zhSYonu0EKIdkT02Z8tCd2_J9IJcjb4dboTMbr0BXg';
         const query = o._supabaseId ? `id=eq.${o._supabaseId}` : `order_number=eq.${o.id}`;
         const r = await fetch(
           `https://gjrmdmyxkisrjhuzrhmg.supabase.co/rest/v1/orders?${query}`,
