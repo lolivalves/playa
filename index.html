@@ -432,62 +432,47 @@ function screenAuth() {
   var mode    = S.authMode || 'login';
   var err     = S.authError || '';
   var loading = S.authLoading || false;
+  var ICON    = 'https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png';
+  var LOGOW   = 'https://github.com/lolivalves/playa/blob/main/taff-04_white.png?raw=true';
 
-  var header =
-    '<div style="background:var(--navy);padding:14px 16px;display:flex;align-items:center;justify-content:space-between">' +
-      '<button onclick="nav('home')" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 6px 0 0;line-height:1">←</button>' +
-      '<img src="' + LOGO_WHITE + '" style="height:30px;object-fit:contain" alt="Playa+">' +
-      '<div style="width:40px"></div>' +
-    '</div>';
+  var title   = mode==='login' ? 'Welcome back!' : mode==='register' ? 'Create your account' : 'Reset password';
+  var sub     = mode==='login' ? 'Sign in to order from the beach.' : mode==='register' ? 'Join Playa+ to start ordering.' : 'Enter your email and we will send a reset link.';
+  var btnTxt  = loading ? 'Please wait...' : mode==='login' ? 'Sign in' : mode==='register' ? 'Create account' : 'Send reset link';
 
-  var body =
-    '<div class="content fade-in" style="padding:24px 20px;padding-bottom:40px">' +
-      '<div style="text-align:center;padding:8px 0 24px">' +
-        '<img src="' + ICON_URL + '" style="width:72px;height:72px;object-fit:contain;margin-bottom:14px" alt="Playa+">' +
-        '<div style="font-weight:700;font-size:20px;color:var(--navy);margin-bottom:6px">' +
-          (mode==='login' ? 'Welcome back!' : mode==='register' ? 'Create your account' : 'Reset password') +
-        '</div>' +
-        '<div style="font-size:13px;color:var(--muted);line-height:1.5">' +
-          (mode==='login' ? 'Sign in to order from the beach.' : mode==='register' ? 'Join Playa+ to start ordering.' : 'Enter your email and we'll send a reset link.') +
-        '</div>' +
-      '</div>' +
-      (err ? '<div style="background:#fff0f0;border-radius:10px;padding:10px 14px;font-size:13px;color:#e53e3e;margin-bottom:14px;text-align:center">' + err + '</div>' : '') +
-      '<div class="card" style="padding:20px">' +
-        (mode==='register' ?
-          '<div style="margin-bottom:12px">' +
-            '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Full name</label>' +
-            '<input id="auth-name" type="text" placeholder="e.g. Alex Rivera" autocomplete="name" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">' +
-          '</div>' : '') +
-        '<div style="margin-bottom:12px">' +
-          '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Email</label>' +
-          '<input id="auth-email" type="email" placeholder="you@example.com" autocomplete="email" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">' +
-        '</div>' +
-        (mode !== 'reset' ?
-          '<div style="margin-bottom:20px">' +
-            '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Password</label>' +
-            '<input id="auth-password" type="password" placeholder="' + (mode==='register' ? 'At least 6 characters' : 'Your password') + '" autocomplete="' + (mode==='register' ? 'new-password' : 'current-password') + '" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">' +
-          '</div>' : '<div style="margin-bottom:20px"></div>') +
-        '<button onclick="doAuth()" class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer' + (loading ? ';opacity:0.6' : '') + '">' +
-          (loading ? '⏳ Please wait…' : mode==='login' ? 'Sign in' : mode==='register' ? 'Create account' : 'Send reset link') +
-        '</button>' +
-      '</div>' +
-      (mode==='login' ?
-        '<div style="text-align:center;margin-top:16px">' +
-          '<button onclick="S.authMode='reset';S.authError='';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Forgot password?</button>' +
-        '</div>' +
-        '<div style="text-align:center;margin-top:10px;font-size:14px;color:var(--muted)">' +
-          'No account? <button onclick="S.authMode='register';S.authError='';render()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit">Sign up free</button>' +
-        '</div>' :
-      mode==='register' ?
-        '<div style="text-align:center;margin-top:16px;font-size:14px;color:var(--muted)">' +
-          'Already have an account? <button onclick="S.authMode='login';S.authError='';render()" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit">Sign in</button>' +
-        '</div>' :
-        '<div style="text-align:center;margin-top:16px">' +
-          '<button onclick="S.authMode='login';S.authError='';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">← Back to sign in</button>' +
-        '</div>') +
-    '</div>';
+  var nameField   = mode==='register' ? '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Full name</label><input id="auth-name" type="text" placeholder="e.g. Alex Rivera" autocomplete="name" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '';
+  var passField   = mode !== 'reset' ? '<div style="margin-bottom:20px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Password</label><input id="auth-password" type="password" placeholder="' + (mode==='register' ? 'At least 6 characters' : 'Your password') + '" autocomplete="' + (mode==='register' ? 'new-password' : 'current-password') + '" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '<div style="margin-bottom:20px"></div>';
+  var errBlock    = err ? '<div style="background:#fff0f0;border-radius:10px;padding:10px 14px;font-size:13px;color:#e53e3e;margin-bottom:14px;text-align:center">' + err + '</div>' : '';
 
-  return header + body;
+  var footer = '';
+  if (mode==='login') {
+    footer = '<div style="text-align:center;margin-top:16px"><button onclick="setAuthMode(this.dataset.m)" data-m="reset" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Forgot password?</button></div>' +
+             '<div style="text-align:center;margin-top:10px;font-size:14px;color:var(--muted)">No account? <button onclick="setAuthMode(this.dataset.m)" data-m="register" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit">Sign up free</button></div>';
+  } else if (mode==='register') {
+    footer = '<div style="text-align:center;margin-top:16px;font-size:14px;color:var(--muted)">Have an account? <button onclick="setAuthMode(this.dataset.m)" data-m="login" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit">Sign in</button></div>';
+  } else {
+    footer = '<div style="text-align:center;margin-top:16px"><button onclick="setAuthMode(this.dataset.m)" data-m="login" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Back to sign in</button></div>';
+  }
+
+  return '<div style="background:var(--navy);padding:14px 16px;display:flex;align-items:center;justify-content:space-between">' +
+           '<button onclick="navHome()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:0 6px 0 0;line-height:1">&#8592;</button>' +
+           '<img src="' + LOGOW + '" style="height:30px;object-fit:contain" alt="Playa+">' +
+           '<div style="width:40px"></div>' +
+         '</div>' +
+         '<div class="content fade-in" style="padding:24px 20px;padding-bottom:40px">' +
+           '<div style="text-align:center;padding:8px 0 24px">' +
+             '<img src="' + ICON + '" style="width:72px;height:72px;object-fit:contain;margin-bottom:14px" alt="Playa+">' +
+             '<div style="font-weight:700;font-size:20px;color:var(--navy);margin-bottom:6px">' + title + '</div>' +
+             '<div style="font-size:13px;color:var(--muted);line-height:1.5">' + sub + '</div>' +
+           '</div>' +
+           errBlock +
+           '<div class="card" style="padding:20px">' +
+             nameField +
+             '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Email</label><input id="auth-email" type="email" placeholder="you@example.com" autocomplete="email" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' +
+             passField +
+             '<button onclick="doAuth()" class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer' + (loading ? ';opacity:0.6' : '') + '">' + btnTxt + '</button>' +
+           '</div>' +
+           footer +
+         '</div>';
 }
 
 function screenMenu() {
@@ -559,7 +544,7 @@ function screenCart() {
           <div style="font-size:48px">🛒</div>
           <div style="font-weight:600;font-size:17px">Cart is empty</div>
           <div style="color:var(--muted);font-size:14px">Add some items from the menu</div>
-          <button class="btn-primary" style="max-width:200px;margin-top:8px" onclick="nav('menu')">Browse menu</button>
+          <button class="btn-primary" style="max-width:200px;margin-top:8px" onclick="navMenu()">Browse menu</button>
         </div>`
       : `${items.map(([sku,qty])=>{
           const p=PRODUCTS.find(x=>x.sku===sku); if(!p) return '';
@@ -743,7 +728,7 @@ function screenTrack() {
           '<div style="font-size:44px">📦</div>' +
           '<div style="color:var(--navy);font-weight:600;font-size:16px">No active order</div>' +
           '<div style="font-size:13px">Place an order and track it here.</div>' +
-          '<button onclick="nav('menu')" class="btn-primary" style="max-width:180px;margin-top:8px;padding:12px;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer">Order now</button>'
+          '<button onclick="navMenu()" class="btn-primary" style="max-width:180px;margin-top:8px;padding:12px;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer">Order now</button>'
         :
           '<div class="spinner"></div>' +
           '<div style="font-size:13px">Loading your order…</div>'
@@ -770,7 +755,7 @@ function screenTrack() {
         '<div class="card" style="text-align:center;padding:16px">' +
           '<div style="font-size:13px;color:var(--muted);line-height:1.6">Refunds typically appear within 5–10 business days. 🏖️</div>' +
         '</div>' +
-        '<button class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px" onclick="S.trackOrder=null;S.trackLoaded=false;nav('menu')">Order again</button>' +
+        '<button class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px" onclick="resetTrackNavMenu()">Order again</button>' +
       '</div>' +
       bottomNav('track');
   }
@@ -1359,6 +1344,12 @@ function addItem(sku) {
   saveCart(); render();
 }
 function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
+function navHome()     { nav('home'); }
+function resetTrackNavMenu() { S.trackOrder=null; S.trackLoaded=false; nav('menu'); }
+function navMenu()     { nav('menu'); }
+function navLogin()    { nav('auth'); }
+function setAuthMode(m){ S.authMode = (typeof m === 'string' ? m : m); S.authError=''; render(); }
+
 async function doAuth() {
   var mode = S.authMode || 'login';
   var email = ((document.getElementById('auth-email')||{}).value||'').trim();
@@ -1528,7 +1519,7 @@ function screenSuccess() {
     </div>` : ''}
 
     <button class="btn-primary" style="max-width:280px" onclick="nav('track')">Track my order →</button>
-    <button onclick="nav('home')" style="margin-top:12px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Back to home</button>
+    <button onclick="navHome()" style="margin-top:12px;background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Back to home</button>
   </div>`;
 }
 
