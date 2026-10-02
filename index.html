@@ -1432,45 +1432,49 @@ async function refreshInventory() {
 
   if (params.get('session_id')) {
     // ✅ Returning from successful Stripe payment
+    const sessionId = params.get('session_id');
     const pending = localStorage.getItem('playa_pending_order');
-    if (pending) {
-      const o = JSON.parse(pending);
-      o.stripeSessionId = params.get('session_id');
-      S.orders.push(o);
-      save();
-      S.orderPlaced = o;
-      localStorage.removeItem('playa_pending_order');
-      localStorage.removeItem(CART_KEY);
-      localStorage.removeItem(VIEW_KEY);
-      S.pinPlaced=false; S.gpsLat=null; S.gpsLng=null; S.gpsAcc=null;
-      S.selfieData=null; S.spotNote=''; S.idMethod='selfie';
-      // Save order to Supabase — retry up to 3 times so store definitely sees it
-      (async () => {
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            const r = await fetch('/api/order', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ order: o })
-            });
-            const data = await r.json();
-            if (data.success && data.order) {
-              // Store the Supabase UUID so the track screen poll can find it
-              o._supabaseId = data.order.id;
-              o._supabaseOrderNumber = data.order.order_number;
-              S.orderPlaced = o;
-              console.log('Order saved to Supabase:', data.order.id);
-              break;
-            } else {
-              console.warn(`Order save attempt ${attempt} failed:`, data);
-            }
-          } catch(e) {
-            console.warn(`Order save attempt ${attempt} error:`, e);
+
+    // Build order object — from localStorage if available, or minimal fallback
+    const o = pending ? JSON.parse(pending) : { id: Date.now(), items: [], total: 0 };
+    o.stripeSessionId = sessionId;
+
+    S.orders.push(o);
+    save();
+    S.orderPlaced = o;
+    localStorage.removeItem('playa_pending_order');
+    localStorage.removeItem(CART_KEY);
+    localStorage.removeItem(VIEW_KEY);
+    S.pinPlaced=false; S.gpsLat=null; S.gpsLng=null; S.gpsAcc=null;
+    S.selfieData=null; S.spotNote=''; S.idMethod='selfie';
+
+    // Save to Supabase — retry up to 5 times with increasing delays
+    // Works even if localStorage was cleared (iOS Safari issue during redirect)
+    (async () => {
+      const delays = [0, 2000, 4000, 8000, 15000];
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        if (delays[attempt] > 0) await new Promise(r => setTimeout(r, delays[attempt]));
+        try {
+          const r = await fetch('/api/order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order: o, sessionId })
+          });
+          const data = await r.json();
+          if (data.success && data.order) {
+            o._supabaseId = data.order.id;
+            S.orderPlaced = o;
+            console.log('✅ Order saved to Supabase on attempt', attempt + 1, data.order.id);
+            break;
+          } else {
+            console.warn(`❌ Attempt ${attempt + 1} failed:`, data);
           }
-          if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+        } catch(e) {
+          console.warn(`❌ Attempt ${attempt + 1} error:`, e.message);
         }
-      })();
-    }
+      }
+    })();
+
     S.view = 'success';
     localStorage.setItem(VIEW_KEY, 'success');
     window.history.replaceState({}, '', '/');
