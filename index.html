@@ -431,6 +431,86 @@ function screenHome() {
   ${bottomNav('home')}`;
 }
 
+function screenResetPassword() {
+  var err     = S.resetError || '';
+  var success = S.resetSuccess || false;
+  var loading = S.resetLoading || false;
+  var LOGOW   = 'https://raw.githubusercontent.com/lolivalves/playa/main/taff-04_white.png';
+  var ICON    = 'https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png';
+
+  var header =
+    '<div style="background:var(--navy);padding:14px 16px;display:flex;align-items:center;justify-content:center">' +
+      '<img src="' + LOGOW + '" style="height:30px;object-fit:contain" alt="Playa+">' +
+    '</div>';
+
+  if (success) {
+    return header +
+      '<div class="content fade-in" style="padding:32px 20px;text-align:center">' +
+        '<div style="font-size:56px;margin-bottom:16px">✅</div>' +
+        '<div style="font-weight:700;font-size:20px;color:var(--navy);margin-bottom:8px">Password updated!</div>' +
+        '<div style="font-size:14px;color:var(--muted);margin-bottom:24px">You can now sign in with your new password.</div>' +
+        '<button onclick="goToSignIn()" class="btn-primary" style="padding:14px 32px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer">Sign in</button>' +
+      '</div>';
+  }
+
+  return header +
+    '<div class="content fade-in" style="padding:24px 20px">' +
+      '<div style="text-align:center;padding:8px 0 24px">' +
+        '<img src="' + ICON + '" style="width:72px;height:72px;object-fit:contain;margin-bottom:14px" alt="Playa+">' +
+        '<div style="font-weight:700;font-size:20px;color:var(--navy);margin-bottom:6px">Set new password</div>' +
+        '<div style="font-size:13px;color:var(--muted)">Choose a new password for your account.</div>' +
+      '</div>' +
+      (err ? '<div style="background:#fff0f0;border-radius:10px;padding:10px 14px;font-size:13px;color:#e53e3e;margin-bottom:14px;text-align:center">' + err + '</div>' : '') +
+      '<div class="card" style="padding:20px">' +
+        '<div style="margin-bottom:12px">' +
+          '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">New password</label>' +
+          '<input id="reset-pw1" type="password" placeholder="At least 6 characters" autocomplete="new-password" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">' +
+        '</div>' +
+        '<div style="margin-bottom:20px">' +
+          '<label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Confirm password</label>' +
+          '<input id="reset-pw2" type="password" placeholder="Same password again" autocomplete="new-password" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit">' +
+        '</div>' +
+        '<button onclick="doResetPassword()" class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer' + (loading ? ';opacity:0.6' : '') + '">' +
+          (loading ? 'Updating...' : 'Set new password') +
+        '</button>' +
+      '</div>' +
+    '</div>';
+}
+
+async function doResetPassword() {
+  var pw1 = (document.getElementById('reset-pw1') || {}).value || '';
+  var pw2 = (document.getElementById('reset-pw2') || {}).value || '';
+  if (pw1.length < 6) { S.resetError = 'Password must be at least 6 characters.'; render(); return; }
+  if (pw1 !== pw2)    { S.resetError = 'Passwords do not match.'; render(); return; }
+  S.resetLoading = true; S.resetError = ''; render();
+  try {
+    // Use the access token from the recovery URL to update the password
+    var token = S._recoveryToken;
+    var r = await fetch(SUPA_URL + '/auth/v1/user', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({ password: pw1 })
+    });
+    var d = await r.json();
+    S.resetLoading = false;
+    if (d.id || d.email) {
+      S.resetSuccess = true;
+      render();
+    } else {
+      S.resetError = d.error_description || d.msg || 'Could not update password. Try requesting a new reset link.';
+      render();
+    }
+  } catch(e) {
+    S.resetLoading = false;
+    S.resetError = 'Connection error. Please try again.';
+    render();
+  }
+}
+
 function screenAuth() {
   var mode    = S.authMode || 'login';
   var err     = S.authError || '';
@@ -1343,6 +1423,7 @@ function addItem(sku) {
 }
 function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
 function navHome()     { nav('home'); }
+function goToSignIn()  { S.view='auth'; S.authMode='login'; render(); }
 function orderNow()    { AUTH ? nav('menu') : nav('auth'); }
 window.orderNow = orderNow;  // ensure globally accessible in all Safari contexts
 function resetTrackNavMenu() { S.trackOrder=null; S.trackLoaded=false; nav('menu'); }
@@ -1541,6 +1622,7 @@ function render() {
     suggestions: screenSuggestions,
     success:     screenSuccess,
     auth:        screenAuth,
+    resetpassword: screenResetPassword,
   };
   app.innerHTML = (screens[S.view] || screenHome)();
   if (S.view==='checkout') bindCheckout();
@@ -1616,6 +1698,21 @@ async function refreshInventory() {
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
 (function boot() {
+  // Detect Supabase password recovery redirect (URL hash contains access_token&type=recovery)
+  var hash = window.location.hash || '';
+  if (hash.indexOf('type=recovery') !== -1) {
+    // Parse the access token from the hash
+    var tokenMatch = hash.match(/access_token=([^&]+)/);
+    if (tokenMatch) {
+      S._recoveryToken = decodeURIComponent(tokenMatch[1]);
+      S.view = 'resetpassword';
+      // Clean the URL
+      window.history.replaceState({}, '', '/');
+      render();
+      return; // skip normal boot
+    }
+  }
+
   // Clear stale transient views from previous sessions
   var _sv = localStorage.getItem('playa_view_v1');
   if (_sv && ['cart','checkout','auth'].indexOf(_sv) !== -1) {
