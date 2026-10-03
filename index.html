@@ -116,15 +116,6 @@
 <div id="app"></div>
 
 <script>
-// ─── GLOBAL ERROR HANDLER (remove after debugging) ──────────────────────────
-window.onerror = function(msg, src, line, col, err) {
-  alert('JS Error: ' + msg + ' (line ' + line + ')');
-  return false;
-};
-window.addEventListener('unhandledrejection', function(e) {
-  alert('Promise error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
-});
-
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const SHEET_CSV  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=0&single=true&output=csv';
 const CONFIG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=611850101&single=true&output=csv';
@@ -186,7 +177,7 @@ const PROD_EMOJI  = {
 const CART_KEY  = 'playa_cart_v1';
 const ORDER_KEY = 'playa_current_order_v1';
 const VIEW_KEY  = 'playa_view_v1';
-const SAFE_VIEWS = ['home','menu','cart','track','profile','history','support','suggestions','success','auth'];
+const SAFE_VIEWS = ['home','menu','track','profile','history','support','suggestions','success','auth'];
 
 let PRODUCTS = [];
 let S = {
@@ -215,7 +206,9 @@ let S = {
 function save() { localStorage.setItem(ORDERS_KEY, JSON.stringify(S.orders)); }
 function saveCart() {
   localStorage.setItem(CART_KEY, JSON.stringify(S.cart));
-  if (SAFE_VIEWS.indexOf(S.view) !== -1) localStorage.setItem(VIEW_KEY, S.view);
+  // Only save non-transient views — never save cart/checkout/auth
+  var _saveable = ['home','menu','track','profile','history','support','suggestions'];
+  if (_saveable.indexOf(S.view) !== -1) localStorage.setItem(VIEW_KEY, S.view);
 }
 function cartCount() { return Object.values(S.cart).reduce((a,b)=>a+b,0); }
 function inCart(sku) { return S.cart[sku] || 0; }
@@ -298,15 +291,16 @@ async function loadProducts() {
         emoji:     PROD_EMOJI[r['SKU']] || CAT_EMOJI[r['Category']] || '🏖️',
         inventory: parseInt(r['Inventory'] || r['inventory'] || '999', 10),
       }));
-    // Restore last view the user was on (cart, menu, etc.)
-    // Never overwrite success screen — customer must choose to navigate away
-    if (S.view !== 'success') {
+    // Restore view — but only if user hasn't navigated since boot started
+    // and never overwrite success screen
+    if (S.view !== 'success' && S.view === 'loading') {
       if (CONFIG.store_status !== 'open') {
-        // Store is closed — show standby screen regardless of saved view
         S.view = 'standby';
       } else {
-        const savedView = localStorage.getItem(VIEW_KEY);
-        S.view = (savedView && SAFE_VIEWS.indexOf(savedView) !== -1) ? savedView : 'home';
+        var savedView = localStorage.getItem(VIEW_KEY);
+        // Only restore safe non-transient views
+        var restorable = ['home','menu','track','profile','history','support','suggestions'];
+        S.view = (savedView && restorable.indexOf(savedView) !== -1) ? savedView : 'home';
       }
     }
   } catch(e) {
@@ -1621,6 +1615,12 @@ async function refreshInventory() {
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
 (function boot() {
+  // Clear stale transient views from previous sessions
+  var _sv = localStorage.getItem('playa_view_v1');
+  if (_sv && ['cart','checkout','auth'].indexOf(_sv) !== -1) {
+    localStorage.removeItem('playa_view_v1');
+  }
+
   const params = new URLSearchParams(window.location.search);
 
   if (params.get('session_id')) {
@@ -1682,6 +1682,7 @@ async function refreshInventory() {
 
   render();       // show loading or success screen immediately
   loadProducts(); // fetch from Google Sheets
+  // Track the view at boot time so loadProducts knows not to overwrite user navigation
   // Refresh inventory every 3 minutes silently
   setInterval(refreshInventory, 3 * 60 * 1000);
 })();
