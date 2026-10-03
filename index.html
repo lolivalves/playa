@@ -927,7 +927,7 @@ function screenProfile() {
           '<div style="font-weight:700;font-size:16px;color:var(--navy)">' + (name || 'Tap Edit to add your name') + '</div>' +
           '<div style="font-size:13px;color:var(--muted)">' + email + '</div>' +
         '</div>' +
-        '<button onclick="S.editingProfile=true;render()" style="background:none;border:0.5px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">Edit</button>' +
+        '<button onclick="startEditProfile()" style="background:none;border:0.5px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">Edit</button>' +
       '</div>' +
       ['📦,Order history,nav(\'history\')', '💡,Suggestions,nav(\'suggestions\')', '🎧,Support,nav(\'support\')'].map(function(s){
         var p=s.split(','); return '<button onclick="'+p[2]+'" style="width:100%;background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;font-family:inherit"><span style="font-size:20px">'+p[0]+'</span><span style="font-size:14px;font-weight:500;flex:1;color:var(--navy)">'+p[1]+'</span><span style="color:var(--muted);font-size:18px">›</span></button>';
@@ -1424,6 +1424,7 @@ function addItem(sku) {
 function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
 function navHome()     { nav('home'); }
 function goToSignIn()  { S.view='auth'; S.authMode='login'; render(); }
+function startEditProfile() { S.editingProfile=true; render(); }
 function orderNow()    { AUTH ? nav('menu') : nav('auth'); }
 window.orderNow = orderNow;  // ensure globally accessible in all Safari contexts
 function resetTrackNavMenu() { S.trackOrder=null; S.trackLoaded=false; nav('menu'); }
