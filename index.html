@@ -307,7 +307,7 @@ async function loadProducts() {
 }
 
 // ─── SVG ASSETS ──────────────────────────────────────────────────────────────
-function towerSVG(s=60) {
+function towerSVG(s) { s = s || 60;
   return `<svg width="${s}" height="${s}" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
     <circle cx="42" cy="46" r="34" fill="#f5a623"/>
     <path d="M10 80 Q30 68 50 72 Q70 76 100 68 Q115 82 120 90 L0 90Z" fill="#2ab5a5" opacity="0.7"/>
@@ -329,10 +329,10 @@ function towerSVG(s=60) {
 }
 
 // ─── SHARED COMPONENTS ───────────────────────────────────────────────────────
-function brandHeader(showCart=false) {
+function brandHeader(showCart) { showCart = showCart || false;
   return `<div class="header">
     <div style="display:flex;align-items:center;gap:10px">
-      <img src="https://github.com/lolivalves/playa/blob/main/taff-04_white.png?raw=true" style="height:34px;object-fit:contain" alt="Playa+">
+      <img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-04_white.png" style="height:34px;object-fit:contain" alt="Playa+">
     </div>
     ${showCart ? `<button onclick="nav('cart')" style="background:rgba(255,255,255,0.15);border:none;border-radius:20px;padding:7px 14px;color:#fff;cursor:pointer;font-size:13px;font-family:inherit">
       ${cartCount()>0 ? `🛒 ${cartCount()} · $${cartSubtotal().toFixed(2)}` : '🛒 Cart'}
@@ -433,7 +433,7 @@ function screenAuth() {
   var err     = S.authError || '';
   var loading = S.authLoading || false;
   var ICON    = 'https://raw.githubusercontent.com/lolivalves/playa/main/taff-01.png';
-  var LOGOW   = 'https://github.com/lolivalves/playa/blob/main/taff-04_white.png?raw=true';
+  var LOGOW   = 'https://raw.githubusercontent.com/lolivalves/playa/main/taff-04_white.png';
 
   var title   = mode==='login' ? 'Welcome back!' : mode==='register' ? 'Create your account' : 'Reset password';
   var sub     = mode==='login' ? 'Sign in to order from the beach.' : mode==='register' ? 'Join Playa+ to start ordering.' : 'Enter your email and we will send a reset link.';
@@ -1203,12 +1203,7 @@ function renderAdmin() {
   document.getElementById('app').innerHTML = `
     <div class="header" style="justify-content:space-between">
       <div style="display:flex;align-items:center;gap:8px">
-        ${towerSVG(34)}
-        <div>
-          <span style="color:#fff;font-size:15px;font-weight:700">playa</span>
-          <span style="color:#f47c3c;font-size:15px;font-weight:700">+</span>
-          <div style="color:#3ecfbf;font-size:9px;letter-spacing:2px">OPERATOR</div>
-        </div>
+        <img src="https://raw.githubusercontent.com/lolivalves/playa/main/taff-04_white.png" style="height:28px;object-fit:contain" alt="Playa+">
       </div>
       <button onclick="nav('profile')"
         style="background:rgba(255,255,255,0.15);border:none;border-radius:8px;padding:6px 13px;color:#fff;font-size:12px;cursor:pointer;font-family:inherit">
