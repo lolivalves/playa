@@ -523,7 +523,10 @@ function screenAuth() {
   var btnTxt  = loading ? 'Please wait...' : mode==='login' ? 'Sign in' : mode==='register' ? 'Create account' : 'Send reset link';
 
   var nameField   = mode==='register' ? '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Full name</label><input id="auth-name" type="text" placeholder="e.g. Alex Rivera" autocomplete="name" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '';
-  var passField   = mode !== 'reset' ? '<div style="margin-bottom:20px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Password</label><input id="auth-password" type="password" placeholder="' + (mode==='register' ? 'At least 6 characters' : 'Your password') + '" autocomplete="' + (mode==='register' ? 'new-password' : 'current-password') + '" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '<div style="margin-bottom:20px"></div>';
+  var passField   = mode !== 'reset'
+    ? '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Password</label><input id="auth-password" type="password" placeholder="' + (mode==='register' ? 'At least 6 characters' : 'Your password') + '" autocomplete="' + (mode==='register' ? 'new-password' : 'current-password') + '" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' +
+      (mode==='register' ? '<div style="margin-bottom:20px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500">Confirm password</label><input id="auth-password2" type="password" placeholder="Same password again" autocomplete="new-password" style="width:100%;padding:12px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '<div style="margin-bottom:20px"></div>')
+    : '<div style="margin-bottom:20px"></div>';
   var errBlock    = err ? '<div style="background:#fff0f0;border-radius:10px;padding:10px 14px;font-size:13px;color:#e53e3e;margin-bottom:14px;text-align:center">' + err + '</div>' : '';
 
   var footer = '';
@@ -929,8 +932,12 @@ function screenProfile() {
         '</div>' +
         '<button onclick="startEditProfile()" style="background:none;border:0.5px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--muted);cursor:pointer;font-family:inherit">Edit</button>' +
       '</div>' +
-      ['📦,Order history,nav(\'history\')', '💡,Suggestions,nav(\'suggestions\')', '🎧,Support,nav(\'support\')'].map(function(s){
-        var p=s.split(','); return '<button onclick="'+p[2]+'" style="width:100%;background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;font-family:inherit"><span style="font-size:20px">'+p[0]+'</span><span style="font-size:14px;font-weight:500;flex:1;color:var(--navy)">'+p[1]+'</span><span style="color:var(--muted);font-size:18px">›</span></button>';
+      [
+        {i:'📦', l:'Order history',  fn:'navHistory()'},
+        {i:'💡', l:'Suggestions',    fn:'navSuggestions()'},
+        {i:'🎧', l:'Support',        fn:'navSupport()'}
+      ].map(function(m) {
+        return '<button onclick="' + m.fn + '" style="width:100%;background:#fff;border:0.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;cursor:pointer;text-align:left;font-family:inherit"><span style="font-size:20px">' + m.i + '</span><span style="font-size:14px;font-weight:500;flex:1;color:var(--navy)">' + m.l + '</span><span style="color:var(--muted);font-size:18px">›</span></button>';
       }).join('') +
       '<button onclick="doSignOut()" style="width:100%;background:none;border:0.5px solid rgba(229,62,62,0.3);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;font-family:inherit;color:#e53e3e;margin-top:4px">' +
         '<span style="font-size:20px">🚪</span><span style="font-size:14px;font-weight:500;flex:1">Sign out</span>' +
@@ -954,12 +961,15 @@ function screenGuest() {
       '<div class="card" style="padding:18px">' +
         (mode==='register' ? '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Your name</label><input id="auth-name" type="text" placeholder="e.g. Alex Rivera" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '') +
         '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Email</label><input id="auth-email" type="email" placeholder="you@example.com" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' +
-        (mode!=='reset' ? '<div style="margin-bottom:16px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Password</label><input id="auth-password" type="password" placeholder="' + (mode==='register'?'At least 6 characters':'Your password') + '" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '<div style="margin-bottom:16px"></div>') +
+        (mode!=='reset'
+          ? '<div style="margin-bottom:12px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Password</label><input id="auth-password" type="password" placeholder="' + (mode==='register'?'At least 6 characters':'Your password') + '" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' +
+            (mode==='register' ? '<div style="margin-bottom:16px"><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px">Confirm password</label><input id="auth-password2" type="password" placeholder="Same password again" style="width:100%;padding:11px 13px;border-radius:9px;border:0.5px solid var(--border);font-size:14px;color:var(--navy);background:var(--cream);font-family:inherit"></div>' : '<div style="margin-bottom:16px"></div>')
+          : '<div style="margin-bottom:16px"></div>') +
         '<button onclick="doAuth()" class="btn-primary" style="width:100%;padding:14px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer' + (loading?';opacity:0.6':'') + '">' + (loading?'⏳ Please wait…':mode==='login'?'Sign in':mode==='register'?'Create account':'Send reset link') + '</button>' +
       '</div>' +
       (mode==='login' ?
-        '<div style="text-align:center;margin-top:12px"><button onclick="S.authMode=\'reset\';S.authError=\'\';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Forgot password?</button></div>' +
-        '<div style="text-align:center;margin-top:8px;font-size:13px;color:var(--muted)">No account? <button onclick="S.authMode=\'register\';S.authError=\'\';render()" style="background:none;border:none;color:var(--teal);font-weight:600;cursor:pointer;font-family:inherit">Sign up free</button></div>'
+        '<div style="text-align:center;margin-top:12px"><button onclick="setAuthMode(this.dataset.m)" data-m="reset" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Forgot password?</button></div>' +
+        '<div style="text-align:center;margin-top:8px;font-size:13px;color:var(--muted)">No account? <button onclick="setAuthMode(this.dataset.m)" data-m="register" style="background:none;border:none;color:var(--teal);font-weight:600;cursor:pointer;font-family:inherit">Sign up free</button></div>'
       : mode==='register' ?
         '<div style="text-align:center;margin-top:12px;font-size:13px;color:var(--muted)">Have an account? <button onclick="S.authMode=\'login\';S.authError=\'\';render()" style="background:none;border:none;color:var(--teal);font-weight:600;cursor:pointer;font-family:inherit">Sign in</button></div>'
       : '<div style="text-align:center;margin-top:12px"><button onclick="S.authMode=\'login\';S.authError=\'\';render()" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">← Back to sign in</button></div>') +
@@ -1425,6 +1435,9 @@ function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render()
 function navHome()     { nav('home'); }
 function goToSignIn()  { S.view='auth'; S.authMode='login'; render(); }
 function startEditProfile() { S.editingProfile=true; render(); }
+function navHistory()     { nav('history'); }
+function navSuggestions() { nav('suggestions'); }
+function navSupport()     { nav('support'); }
 function orderNow()    { AUTH ? nav('menu') : nav('auth'); }
 window.orderNow = orderNow;  // ensure globally accessible in all Safari contexts
 function resetTrackNavMenu() { S.trackOrder=null; S.trackLoaded=false; nav('menu'); }
@@ -1437,9 +1450,11 @@ async function doAuth() {
   var email = ((document.getElementById('auth-email')||{}).value||'').trim();
   var pw    = (document.getElementById('auth-password')||{}).value||'';
   var name  = ((document.getElementById('auth-name')||{}).value||'').trim();
+  var pw2 = ((document.getElementById('auth-password2')||{}).value||'');
   if (!email) { S.authError='Please enter your email.'; render(); return; }
   if (mode!=='reset' && !pw) { S.authError='Please enter your password.'; render(); return; }
   if (mode==='register' && pw.length<6) { S.authError='Password must be at least 6 characters.'; render(); return; }
+  if (mode==='register' && pw !== pw2) { S.authError='Passwords do not match.'; render(); return; }
   S.authLoading=true; S.authError=''; render();
   var result;
   if (mode==='login') result = await signIn(email, pw);
