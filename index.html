@@ -1540,6 +1540,7 @@ function render() {
     support:     screenSupport,
     suggestions: screenSuggestions,
     success:     screenSuccess,
+    auth:        screenAuth,
   };
   app.innerHTML = (screens[S.view] || screenHome)();
   if (S.view==='checkout') bindCheckout();
