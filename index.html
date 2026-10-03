@@ -116,6 +116,15 @@
 <div id="app"></div>
 
 <script>
+// ─── GLOBAL ERROR HANDLER (remove after debugging) ──────────────────────────
+window.onerror = function(msg, src, line, col, err) {
+  alert('JS Error: ' + msg + ' (line ' + line + ')');
+  return false;
+};
+window.addEventListener('unhandledrejection', function(e) {
+  alert('Promise error: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+});
+
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const SHEET_CSV  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=0&single=true&output=csv';
 const CONFIG_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ5bYbVSWwewbH3NJwwXuN4uplRqtQuwdc0bD0QbVvf6_iU6sj6gEzLJ3qO3vXVuir0x2hpFDyY5WGY/pub?gid=611850101&single=true&output=csv';
@@ -206,7 +215,7 @@ let S = {
 function save() { localStorage.setItem(ORDERS_KEY, JSON.stringify(S.orders)); }
 function saveCart() {
   localStorage.setItem(CART_KEY, JSON.stringify(S.cart));
-  if (SAFE_VIEWS.includes(S.view)) localStorage.setItem(VIEW_KEY, S.view);
+  if (SAFE_VIEWS.indexOf(S.view) !== -1) localStorage.setItem(VIEW_KEY, S.view);
 }
 function cartCount() { return Object.values(S.cart).reduce((a,b)=>a+b,0); }
 function inCart(sku) { return S.cart[sku] || 0; }
@@ -297,7 +306,7 @@ async function loadProducts() {
         S.view = 'standby';
       } else {
         const savedView = localStorage.getItem(VIEW_KEY);
-        S.view = (savedView && SAFE_VIEWS.includes(savedView)) ? savedView : 'home';
+        S.view = (savedView && SAFE_VIEWS.indexOf(savedView) !== -1) ? savedView : 'home';
       }
     }
   } catch(e) {
@@ -353,7 +362,7 @@ function bottomNav(active) {
   const tabs = [
     {id:'home', icon:'🏠', label:'Home'},
     {id:'menu', icon:'🍽️', label:'Menu'},
-    {id:'track', icon:'🚀', label:'Track', badge: S.trackOrder && !['delivered','rejected','cancelled'].includes(S.trackOrder.status)},
+    {id:'track', icon:'🚀', label:'Track', badge: S.trackOrder && ['delivered','rejected','cancelled'].indexOf(S.trackOrder.status) === -1},
     {id:'profile', icon:'👤', label:'Profile'}
   ];
   return `<nav class="sticky-nav">
@@ -415,7 +424,7 @@ function screenHome() {
             <span style="font-size:14px;color:var(--navy)">${s[1]}</span>
           </div>`).join('')}
       </div>
-      <button class="btn-primary" onclick="orderNow()">Order now →</button>
+      <button class="btn-primary" onclick="orderNow()" id="order-now-btn">Order now →</button>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px">
         ${[['⏱️','~8 min delivery'],['🆓','Free delivery'],['🏖️','Beach-side only']].map(([e,l])=>`
           <div class="card" style="text-align:center;padding:12px 8px;margin-bottom:0">
@@ -1311,7 +1320,7 @@ var PROTECTED_VIEWS = ['menu','cart','checkout','track','history','suggestions',
 function nav(v) {
   if (v==='admin') { S.view='admin'; renderAdmin(); return; }
   // If not logged in and trying to access protected views, show auth wall
-  if (!AUTH && PROTECTED_VIEWS.includes(v)) {
+  if (!AUTH && PROTECTED_VIEWS.indexOf(v) !== -1) {
     S.authMode = 'login'; S.authError = ''; S.view = 'auth'; render(); return;
   }
   // Leaving success screen — clear stored view
@@ -1319,7 +1328,7 @@ function nav(v) {
     localStorage.removeItem(VIEW_KEY);
   }
   // Clear current order when going home or to menu (order journey complete)
-  if (['home','menu'].includes(v)) {
+  if (['home','menu'].indexOf(v) !== -1) {
     localStorage.removeItem(ORDER_KEY);
     S.orderPlaced = null;
   }
@@ -1341,6 +1350,7 @@ function addItem(sku) {
 function removeItem(sku) { if(S.cart[sku]>0) S.cart[sku]--; saveCart(); render(); }
 function navHome()     { nav('home'); }
 function orderNow()    { AUTH ? nav('menu') : nav('auth'); }
+window.orderNow = orderNow;  // ensure globally accessible in all Safari contexts
 function resetTrackNavMenu() { S.trackOrder=null; S.trackLoaded=false; nav('menu'); }
 function navMenu()     { nav('menu'); }
 function navLogin()    { nav('auth'); }
