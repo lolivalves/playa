@@ -87,6 +87,27 @@
       font-size: 11px; font-weight: 600; color: var(--teal);
       letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 10px;
     }
+    /* Lightbox */
+    #lightbox {
+      display: none; position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,0.88);
+      align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img {
+      max-width: 92vw; max-height: 82vh;
+      border-radius: 16px; object-fit: contain;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+      pointer-events: none;
+    }
+    #lightbox-close {
+      position: absolute; top: 18px; right: 18px;
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(255,255,255,0.18); border: none; color: #fff;
+      font-size: 20px; cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+    }
     .btn-primary {
       width: 100%; padding: 15px;
       background: var(--orange); color: var(--white);
@@ -580,9 +601,10 @@ function screenMenu() {
     <div style="padding:10px 14px">
       ${filtered.map(p=>`
         <div class="card" style="margin-bottom:9px;display:flex;align-items:center;gap:12px;padding:12px">
-          <div style="width:54px;height:54px;border-radius:10px;background:var(--sand);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;overflow:hidden;position:relative">
+          <div style="width:54px;height:54px;border-radius:10px;background:var(--sand);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;overflow:hidden;position:relative;${p.img && !isOutOfStock(p) ? 'cursor:pointer' : ''}"
+            ${p.img && !isOutOfStock(p) ? 'onclick="lbTap(this)"' : ''}>
             ${p.img
-              ? `<img src="${p.img}" style="width:54px;height:54px;object-fit:cover;border-radius:10px;${isOutOfStock(p)?'opacity:0.4;filter:grayscale(1)':''}" onerror="this.parentNode.innerHTML='${p.emoji}'">`
+              ? `<img src="${p.img}" data-lbsrc="${p.img}" data-lbalt="${p.name.replace(/"/g,'&quot;')}" style="width:54px;height:54px;object-fit:cover;border-radius:10px;${isOutOfStock(p)?'opacity:0.4;filter:grayscale(1)':''}" onerror="this.parentNode.innerHTML='${p.emoji}'">`
               : `<span style="${isOutOfStock(p)?'opacity:0.4;filter:grayscale(1)':''}">${p.emoji}</span>`}
           </div>
           <div style="flex:1;min-width:0">
@@ -1659,6 +1681,33 @@ function bindCheckout() {
   if (sn) sn.addEventListener('input', e=>{ S.spotNote=e.target.value; });
 }
 
+// ─── LIGHTBOX ────────────────────────────────────────────────────────────────
+function openLightbox(url, alt) {
+  var lb = document.getElementById('lightbox');
+  var img = document.getElementById('lightbox-img');
+  if (!lb || !img || !url) return;
+  img.src = url;
+  img.alt = alt || '';
+  lb.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeLightbox() {
+  var lb = document.getElementById('lightbox');
+  if (!lb) return;
+  lb.classList.remove('open');
+  document.body.style.overflow = '';
+  // Clear src after transition to free memory
+  setTimeout(function() {
+    var img = document.getElementById('lightbox-img');
+    if (img) img.src = '';
+  }, 200);
+}
+function lbTap(el) {
+  // Find the img inside the tapped container and open lightbox
+  var img = el.querySelector('img[data-lbsrc]');
+  if (img) openLightbox(img.getAttribute('data-lbsrc'), img.getAttribute('data-lbalt'));
+}
+
 // ─── INVENTORY REFRESH ──────────────────────────────────────────────────────
 // Silently re-fetches the sheet every 3 minutes so inventory stays current
 // without the customer needing to manually refresh the page.
@@ -1801,5 +1850,10 @@ async function refreshInventory() {
   setInterval(refreshInventory, 3 * 60 * 1000);
 })();
 </script>
+<!-- Lightbox overlay -->
+<div id="lightbox" onclick="closeLightbox()">
+  <button id="lightbox-close" onclick="closeLightbox()">✕</button>
+  <img id="lightbox-img" src="" alt="">
+</div>
 </body>
 </html>
