@@ -64,6 +64,9 @@ module.exports = async function handler(req, res) {
     const payload = {
       order_number:      orderNumber,
       status:            'pending',
+      customer_id:       order?.customerId    || meta.customer_id    || null,
+      customer_email:    order?.customerEmail || meta.customer_email || (stripeSession?.customer_details?.email) || '',
+      customer_name:     order?.customerName  || meta.customer_name  || (stripeSession?.customer_details?.name)  || '',
       total:             total,
       subtotal:          order?.subtotal || total,
       service_fee:       order?.service_fee || 0,

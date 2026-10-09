@@ -801,9 +801,9 @@ function screenCheckout() {
 }
 function screenTrack() {
   // Always fetch active order from Supabase — never rely on localStorage
-  if (!S.trackLoaded) {
-    S.trackLoaded = true;
-    S.trackOrder  = null;
+  if (!S.trackLoaded && !S.trackFetching) {
+    S.trackFetching = true;   // prevent double-fetch; trackLoaded stays false until done
+    S.trackOrder    = null;
     if (AUTH && AUTH.user) {
       var token = AUTH.access_token;
       var uid   = AUTH.user.id;
@@ -812,6 +812,8 @@ function screenTrack() {
         { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + token } })
       .then(function(r) { return r.json(); })
       .then(function(rows) {
+        S.trackFetching = false;
+        S.trackLoaded   = true;
         if (rows && rows[0]) {
           S.trackOrder = rows[0];
           // Start polling for status changes
@@ -821,8 +823,14 @@ function screenTrack() {
       })
       .catch(function(e) {
         console.warn('Track fetch failed:', e);
+        S.trackFetching = false;
+        S.trackLoaded   = true;
         if (S.view === 'track') render();
       });
+    } else {
+      // Not logged in — mark done immediately
+      S.trackFetching = false;
+      S.trackLoaded   = true;
     }
   }
 
@@ -1439,7 +1447,7 @@ function nav(v) {
     S.orderPlaced = null;
   }
   // Reset track/history on navigate so fresh data loads from Supabase
-  if (v === 'track')   { S.trackLoaded = false; S.trackOrder = null; }
+  if (v === 'track')   { S.trackLoaded = false; S.trackFetching = false; S.trackOrder = null; }
   if (v === 'history') { S.historyLoaded = false; }
   if (v === 'profile') { S.editingProfile = false; }
   S.view=v; render();
@@ -1462,7 +1470,7 @@ function navSuggestions() { nav('suggestions'); }
 function navSupport()     { nav('support'); }
 function orderNow()    { AUTH ? nav('menu') : nav('auth'); }
 window.orderNow = orderNow;  // ensure globally accessible in all Safari contexts
-function resetTrackNavMenu() { S.trackOrder=null; S.trackLoaded=false; nav('menu'); }
+function resetTrackNavMenu() { S.trackOrder=null; S.trackLoaded=false; S.trackFetching=false; nav('menu'); }
 function navMenu()     { nav('menu'); }
 function navLogin()    { nav('auth'); }
 function setAuthMode(m){ S.authMode = (typeof m === 'string' ? m : m); S.authError=''; render(); }
@@ -1569,6 +1577,9 @@ async function placeOrder() {
     gpsAcc: S.gpsAcc,
     selfie: S.selfieData || null,
     idMethod: S.idMethod || 'selfie',
+    customerId: AUTH && AUTH.user ? AUTH.user.id : null,
+    customerEmail: AUTH && AUTH.user ? AUTH.user.email : '',
+    customerName: (AUTH && AUTH.profile) ? (AUTH.profile.name || '') : '',
   };
   localStorage.setItem('playa_pending_order', JSON.stringify(pendingOrder));
 
