@@ -836,6 +836,11 @@ function screenTrack() {
 
   var o = S.trackOrder;
 
+  // Fall back to last delivered order if no active order
+  if (!o && S.lastDeliveredOrder) {
+    o = S.lastDeliveredOrder;
+  }
+
   if (!o) {
     // Show loading briefly, then "no active order"
     return backHeader('Order tracking','home') +
@@ -876,24 +881,57 @@ function screenTrack() {
       bottomNav('track');
   }
 
-  var steps = isPending
-    ? [{l:'Order received — awaiting store review', done:true, i:'✅'},{l:'Store preparing your items', done:false, i:'🧑‍🍳'},{l:'On the way to you', done:false, i:'🏃'},{l:'Delivered!', done:false, i:'🏖️'}]
-    : [{l:'Order received', done:true, i:'✅'},{l:'Being prepared', done:true, i:'🧊'},{l:'On the way to you', done:false, i:'🏃'},{l:'Delivered!', done:false, i:'🏖️'}];
+  var isDelivered = status === 'delivered';
+  var isClaimed   = status === 'claimed';
+
+  var steps;
+  if (isPending) {
+    steps = [
+      {l:'Order received — awaiting store review', done:true,  i:'✅'},
+      {l:'Preparing your order and on the way',    done:false, i:'🧑‍🍳'},
+      {l:'Delivered!',                             done:false, i:'🏖️'}
+    ];
+  } else if (isDelivered) {
+    steps = [
+      {l:'Order received',                      done:true, i:'✅'},
+      {l:'Preparing your order and on the way', done:true, i:'🧑‍🍳'},
+      {l:'Delivered!',                          done:true, i:'🏖️'}
+    ];
+  } else {
+    // new or claimed — en route
+    steps = [
+      {l:'Order received',                      done:true,         i:'✅'},
+      {l:'Preparing your order and on the way', done:isClaimed,    i:'🧑‍🍳'},
+      {l:'Delivered!',                          done:false,        i:'🏖️'}
+    ];
+  }
 
   var items = Array.isArray(o.items) ? o.items : (typeof o.items==='string' ? JSON.parse(o.items||'[]') : []);
 
+  var headerBanner;
+  if (isDelivered) {
+    headerBanner = '<div style="background:#1a7a5e;border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">' +
+      '<div style="font-size:40px;margin-bottom:8px">🏖️</div>' +
+      '<div style="color:#fff;font-size:22px;font-weight:800;margin-bottom:4px">Delivered!</div>' +
+      '<div style="color:rgba(255,255,255,0.75);font-size:12px">Order #' + o.order_number + ' · Enjoy!</div>' +
+    '</div>';
+  } else if (isPending) {
+    headerBanner = '<div style="background:var(--navy);border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">' +
+      '<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Status</div>' +
+      '<div style="color:#fff;font-size:22px;font-weight:800;margin:6px 0">Store reviewing ✍️</div>' +
+      '<div style="color:var(--teal2);font-size:12px">Hang tight — we will prepare it shortly · Order #' + o.order_number + '</div>' +
+    '</div>';
+  } else {
+    headerBanner = '<div style="background:var(--navy);border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">' +
+      '<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Estimated arrival</div>' +
+      '<div style="color:#fff;font-size:36px;font-weight:800;margin:4px 0">~8 min</div>' +
+      '<div style="color:var(--teal2);font-size:12px">Order #' + o.order_number + '</div>' +
+    '</div>';
+  }
+
   return backHeader('Order tracking','home') +
     '<div class="content fade-in" style="padding:14px;padding-bottom:80px">' +
-      '<div style="background:var(--navy);border-radius:14px;padding:20px;margin-bottom:12px;text-align:center">' +
-        (isPending
-          ? '<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Status</div>' +
-            '<div style="color:#fff;font-size:22px;font-weight:800;margin:6px 0">Store reviewing ✍️</div>' +
-            '<div style="color:var(--teal2);font-size:12px">Hang tight — we will prepare it shortly · Order #' + o.order_number + '</div>'
-          : '<div style="color:rgba(255,255,255,0.65);font-size:11px;letter-spacing:2px;text-transform:uppercase">Estimated arrival</div>' +
-            '<div style="color:#fff;font-size:36px;font-weight:800;margin:4px 0">~8 min</div>' +
-            '<div style="color:var(--teal2);font-size:12px">Order #' + o.order_number + '</div>'
-        ) +
-      '</div>' +
+      headerBanner +
       '<div class="card">' +
         steps.map(function(s,i) {
           return '<div style="display:flex;align-items:center;gap:13px;padding:10px 0;' + (i<steps.length-1?'border-bottom:0.5px solid var(--border)':'') + '">' +
@@ -938,8 +976,11 @@ function startTrackPoll(orderId, token) {
       if (newStatus === 'delivered' || newStatus === 'rejected') {
         clearInterval(_trackPollTimer);
         _trackPollTimer = null;
-        // If delivered — refresh history too
-        if (newStatus === 'delivered') { S.historyLoaded = false; }
+        if (newStatus === 'delivered') {
+          // Keep delivered order visible until next order or logout
+          S.lastDeliveredOrder = rows[0];
+          S.historyLoaded = false;
+        }
       }
       if (S.view === 'track' && newStatus !== oldStatus) render();
     })
@@ -1497,6 +1538,11 @@ async function doAuth() {
 
 async function doSignOut() {
   await signOut();
+  // Clear delivered order memory on logout
+  S.lastDeliveredOrder = null;
+  S.trackOrder = null;
+  S.trackLoaded = false;
+  S.trackFetching = false;
   nav('home');
 }
 
@@ -1815,6 +1861,8 @@ async function refreshInventory() {
     localStorage.removeItem(VIEW_KEY);
     S.pinPlaced=false; S.gpsLat=null; S.gpsLng=null; S.gpsAcc=null;
     S.selfieData=null; S.spotNote=''; S.idMethod='selfie';
+    // Clear any previously delivered order so it doesn't bleed into new tracking
+    S.lastDeliveredOrder = null;
 
     // Save to Supabase — retry up to 5 times with increasing delays
     // Works even if localStorage was cleared (iOS Safari issue during redirect)
@@ -1833,6 +1881,15 @@ async function refreshInventory() {
             o._supabaseId = data.order.id;
             S.orderPlaced = o;
             localStorage.setItem(ORDER_KEY, JSON.stringify(o));
+            // Seed trackOrder immediately so Track tab works without waiting for re-fetch
+            S.trackOrder   = data.order;
+            S.trackLoaded  = true;
+            S.trackFetching = false;
+            // Start polling now that we have the real Supabase row id
+            var auth = AUTH;
+            if (auth && auth.access_token) {
+              startTrackPoll(data.order.id, auth.access_token);
+            }
             console.log('✅ Order saved to Supabase on attempt', attempt + 1, data.order.id);
             break;
           } else {
