@@ -553,7 +553,7 @@ function screenAuth() {
   var footer = '';
   if (mode==='login') {
     footer = '<div style="text-align:center;margin-top:16px"><button onclick="setAuthMode(this.dataset.m)" data-m="reset" style="background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:inherit">Forgot password?</button></div>' +
-             '<div style="text-align:center;margin-top:10px;font-size:14px;color:var(--muted)">No account? <button onclick="setAuthMode(this.dataset.m)" data-m="register" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit">Sign up free</button></div>';
+             '<div style="margin-top:16px"><button onclick="setAuthMode(this.dataset.m)" data-m="register" style="width:100%;padding:14px;border-radius:12px;border:2px solid var(--teal);background:transparent;color:var(--teal);font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:0.2px">Create free account →</button></div>';
   } else if (mode==='register') {
     footer = '<div style="text-align:center;margin-top:16px;font-size:14px;color:var(--muted)">Have an account? <button onclick="setAuthMode(this.dataset.m)" data-m="login" style="background:none;border:none;color:var(--teal);font-weight:600;font-size:14px;cursor:pointer;font-family:inherit">Sign in</button></div>';
   } else {
@@ -587,10 +587,13 @@ function screenMenu() {
   const knownCats = CAT_ORDER.filter(c => PRODUCTS.some(p=>p.cat===c));
   const extraCats = [...new Set(PRODUCTS.map(p=>p.cat))].filter(c => CAT_ORDER.indexOf(c) === -1);
   const cats = ['All', ...knownCats, ...extraCats];
-  const filtered = S.catFilter==='All' ? PRODUCTS : PRODUCTS.filter(p=>p.cat===S.catFilter);
+  const sq = (S.searchQuery || '').trim().toLowerCase();
+  const filtered = sq
+    ? PRODUCTS.filter(p => p.name.toLowerCase().indexOf(sq) !== -1 || (p.desc && p.desc.toLowerCase().indexOf(sq) !== -1) || p.cat.toLowerCase().indexOf(sq) !== -1)
+    : (S.catFilter==='All' ? PRODUCTS : PRODUCTS.filter(p=>p.cat===S.catFilter));
   return `${brandHeader(true)}
-  <div style="position:sticky;top:56px;z-index:40;background:var(--cream);border-bottom:0.5px solid var(--border);padding:7px 14px 7px">
-    <div style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch">
+  <div style="position:sticky;top:56px;z-index:40;background:var(--cream);border-bottom:0.5px solid var(--border);padding:7px 14px 6px">
+    ${!sq ? `<div style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin-bottom:7px">
       ${cats.map(c=>`<button onclick="setFilter('${c}')"
         style="white-space:nowrap;padding:5px 13px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;transition:all 0.15s;flex-shrink:0;
         border:1.5px solid ${S.catFilter===c?'#0d2b4e':'rgba(0,0,0,0.1)'};
@@ -598,10 +601,18 @@ function screenMenu() {
         color:${S.catFilter===c?'#fff':'#0d2b4e'}">
         ${CAT_EMOJI[c]||'🏖️'} ${c}
       </button>`).join('')}
+    </div>` : ''}
+    <div style="display:flex;align-items:center;gap:8px;background:#fff;border-radius:22px;border:1.5px solid ${sq ? 'var(--teal)' : 'rgba(0,0,0,0.1)'};padding:7px 13px">
+      <span style="font-size:16px;flex-shrink:0">🔍</span>
+      <input id="menu-search" type="search" placeholder="Search products…" value="${sq.replace(/"/g,'&quot;')}"
+        oninput="setSearch(this.value)"
+        style="flex:1;border:none;background:transparent;font-size:14px;color:var(--navy);font-family:inherit;outline:none;min-width:0">
+      ${sq ? `<button onclick="clearSearch()" style="background:none;border:none;padding:0;cursor:pointer;font-size:18px;line-height:1;color:var(--muted);flex-shrink:0">✕</button>` : ''}
     </div>
   </div>
   <div class="content fade-in">
     <div style="padding:10px 14px">
+      ${filtered.length===0 ? `<div style="text-align:center;padding:40px 20px;color:var(--muted)"><div style="font-size:36px;margin-bottom:10px">🏖️</div><div style="font-size:16px;font-weight:600;margin-bottom:6px">No results</div><div style="font-size:14px">Try a different word</div></div>` : ''}
       ${filtered.map(p=>`
         <div class="card" style="margin-bottom:9px;display:flex;align-items:center;gap:12px;padding:12px">
           <div style="width:54px;height:54px;border-radius:10px;background:var(--sand);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0;overflow:hidden;position:relative;${p.img && !isOutOfStock(p) ? 'cursor:pointer' : ''}"
@@ -1496,7 +1507,9 @@ function nav(v) {
   if (v === 'profile') { S.editingProfile = false; }
   S.view=v; render();
 }
-function setFilter(f) { S.catFilter=f; render(); }
+function setFilter(f) { S.catFilter=f; S.searchQuery=''; render(); }
+function setSearch(v) { S.searchQuery=v||''; render(); setTimeout(function(){ var el=document.getElementById('menu-search'); if(el){el.focus();var l=el.value.length;el.setSelectionRange(l,l);} },0); }
+function clearSearch() { S.searchQuery=''; render(); }
 function setAdminView(v) { S.adminView=v; renderAdmin(); }
 function addItem(sku) {
   const p = PRODUCTS.find(x=>x.sku===sku);
