@@ -184,8 +184,8 @@ async function sendReset(email) {
 let CONFIG = { service_fee: 4.99, fee_label: 'Service fee', delivery_fee: 0, delivery_label: 'Delivery', store_status: 'open', store_message: 'Store not open at this moment' };
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const CAT_EMOJI   = { Drinks:'💧', Snacks:'🥨', Food:'🥗', 'Ice Cream':'🍦' };
-const CAT_ORDER   = ['Drinks','Food','Snacks','Ice Cream'];
+const CAT_EMOJI   = { Drinks:'💧', Snacks:'🥨', Food:'🥗', 'Ice Cream':'🍦', Candies:'🍬' };
+const CAT_ORDER   = ['Drinks','Food','Snacks','Ice Cream','Candies'];
 const PROD_EMOJI  = {
   DRK001:'🥤',DRK002:'🥤',DRK003:'🥤',DRK004:'🟢',DRK005:'🟢',
   DRK006:'💧',DRK007:'✨',DRK008:'⚡',DRK009:'🍊',DRK010:'🍋',
@@ -583,7 +583,10 @@ function screenAuth() {
 }
 
 function screenMenu() {
-  const cats = ['All', ...CAT_ORDER.filter(c => PRODUCTS.some(p=>p.cat===c))];
+  // Known categories in preferred order, plus any unknown ones from the sheet appended at the end
+  const knownCats = CAT_ORDER.filter(c => PRODUCTS.some(p=>p.cat===c));
+  const extraCats = [...new Set(PRODUCTS.map(p=>p.cat))].filter(c => CAT_ORDER.indexOf(c) === -1);
+  const cats = ['All', ...knownCats, ...extraCats];
   const filtered = S.catFilter==='All' ? PRODUCTS : PRODUCTS.filter(p=>p.cat===S.catFilter);
   return `${brandHeader(true)}
   <div style="position:sticky;top:56px;z-index:40;background:var(--cream);border-bottom:0.5px solid var(--border);padding:7px 14px 7px">
