@@ -148,6 +148,35 @@ let   AUTH       = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
 
 function saveAuth(a) { AUTH = a; if(a) localStorage.setItem(AUTH_KEY,JSON.stringify(a)); else localStorage.removeItem(AUTH_KEY); }
 
+// Silently refresh the Supabase access token using the stored refresh_token.
+// Returns the fresh access_token string, or null if refresh fails.
+async function refreshAuth() {
+  if (!AUTH || !AUTH.refresh_token) return null;
+  try {
+    var r = await fetch(SUPA_URL+'/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPA_KEY },
+      body: JSON.stringify({ refresh_token: AUTH.refresh_token })
+    });
+    var d = await r.json();
+    if (d && d.access_token) {
+      // Preserve profile and user fields, update tokens
+      saveAuth({
+        access_token:  d.access_token,
+        refresh_token: d.refresh_token || AUTH.refresh_token,
+        user:          d.user || AUTH.user,
+        profile:       AUTH.profile || {}
+      });
+      return d.access_token;
+    }
+    // Refresh failed (token revoked, user deleted, etc.) — sign out cleanly
+    saveAuth(null);
+    return null;
+  } catch(e) {
+    return null; // network error — keep existing token, try with it
+  }
+}
+
 async function signIn(email, pw) {
   try {
     var r = await fetch(SUPA_URL+'/auth/v1/token?grant_type=password', {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPA_KEY},body:JSON.stringify({email:email,password:pw})});
@@ -978,8 +1007,10 @@ var _trackPollTimer = null;
 function startTrackPoll(orderId, token) {
   if (_trackPollTimer) clearInterval(_trackPollTimer);
   _trackPollTimer = setInterval(function() {
+    // Always use the freshest token available (may have been refreshed since poll started)
+    var liveToken = (AUTH && AUTH.access_token) || token;
     fetch(SUPA_URL + '/rest/v1/orders?id=eq.' + orderId,
-      { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + token } })
+      { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + liveToken } })
     .then(function(r) { return r.json(); })
     .then(function(rows) {
       if (!rows || !rows[0]) return;
@@ -1066,21 +1097,25 @@ function screenGuest() {
 function screenHistory() {
   if (!AUTH) { S.authMode='login'; S.authError=''; S.view='auth'; render(); return ''; }
 
-  // Fetch delivered orders from Supabase
+  // Fetch delivered orders from Supabase (last 30 days)
   if (!S.historyLoaded) {
     S.historyLoaded = true;
-    var token = AUTH.access_token;
-    var uid   = AUTH.user.id;
-    fetch(SUPA_URL + '/rest/v1/orders?customer_id=eq.' + uid +
-          '&status=eq.delivered&order=created_at.desc&limit=50',
-      { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + token } })
-    .then(function(r) { return r.json(); })
-    .then(function(rows) {
-      S.cloudOrders = Array.isArray(rows) ? rows : [];
-      if (S.view === 'history') render();
-    })
-    .catch(function() {
-      S.cloudOrders = [];
+    var uid = AUTH.user.id;
+    var since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    // Refresh token first so an expired session never blanks history
+    refreshAuth().then(function() {
+      var token = AUTH && AUTH.access_token;
+      if (!token || !AUTH) { S.cloudOrders = []; if (S.view==='history') render(); return; }
+      return fetch(SUPA_URL + '/rest/v1/orders?customer_id=eq.' + uid +
+            '&status=eq.delivered&created_at=gte.' + since + '&order=created_at.desc&limit=100',
+        { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + token } })
+      .then(function(r) { return r.json(); })
+      .then(function(rows) {
+        S.cloudOrders = Array.isArray(rows) ? rows : [];
+        if (S.view === 'history') render();
+      });
+    }).catch(function() {
+      S.cloudOrders = S.cloudOrders || []; // keep any previously loaded data
       if (S.view === 'history') render();
     });
   }
@@ -1927,11 +1962,18 @@ async function refreshInventory() {
     window.history.replaceState({}, '', '/');
   }
 
+  // Silently refresh auth token at boot so expired sessions recover automatically
+  if (AUTH && AUTH.refresh_token) {
+    refreshAuth().catch(function(){});
+  }
+
   render();       // show loading or success screen immediately
   loadProducts(); // fetch from Google Sheets
   // Track the view at boot time so loadProducts knows not to overwrite user navigation
   // Refresh inventory every 3 minutes silently
   setInterval(refreshInventory, 3 * 60 * 1000);
+  // Re-refresh token every 50 minutes (Supabase tokens expire after 1 hour)
+  setInterval(function(){ if(AUTH && AUTH.refresh_token) refreshAuth().catch(function(){}); }, 50 * 60 * 1000);
 })();
 </script>
 <!-- Lightbox overlay -->
